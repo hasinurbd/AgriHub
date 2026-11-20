@@ -1,0 +1,7 @@
+{
+  "name": "AgriHub - Agriculture Supply Chain Management System",
+  "description": "Enterprise Agriculture Supply Chain Management System with role-based portals for Farmers, Suppliers, Buyers, and Admins, featuring verified harvest batch tracking and cold-chain logistics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
