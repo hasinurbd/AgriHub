@@ -37,6 +37,16 @@ export default defineConfig(() => {
                 test: /node_modules[\\/]lucide-react[\\/]/,
                 priority: 20,
               },
+              {
+                name: 'vendor-pdf',
+                test: /node_modules[\\/](jspdf|html2canvas|html-to-image|dompurify|fflate|canvg|stackblur-canvas)[\\/]/,
+                priority: 28,
+              },
+              {
+                name: 'vendor-ai',
+                test: /node_modules[\\/]@google[\\/]genai[\\/]/,
+                priority: 25,
+              },
             ],
           },
         },
