@@ -236,6 +236,10 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
     ...((options.headers as Record<string, string>) || {})
   };
 
+  if (/\.ngrok(-free)?\.(app|dev|io)\b/i.test(base) && !headers['ngrok-skip-browser-warning']) {
+    headers['ngrok-skip-browser-warning'] = 'true';
+  }
+
   if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }

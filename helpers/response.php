@@ -27,7 +27,7 @@ if ($isAllowedOrigin) {
     header("Access-Control-Allow-Origin: {$requestOrigin}");
     header("Access-Control-Allow-Credentials: true");
     header("Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS");
-    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Idempotency-Key");
+    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Idempotency-Key, ngrok-skip-browser-warning");
     header("Access-Control-Max-Age: 86400");
 }
 

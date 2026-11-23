@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export default function AdminLoginPage() {
-  const { currentUser, isAdmin, isDemoMode, login, logout } = useAuth();
+  const { currentUser, isAdmin, isDemoMode, backendConnected, login, logout } = useAuth();
   const { language, setLanguage, tr } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -54,8 +54,13 @@ export default function AdminLoginPage() {
   };
 
   const setPreset = () => {
-    setEmail('admin@agrihub.com');
-    setPassword('agraiagrihb#1');
+    if (backendConnected) {
+      setEmail('admin@agrihub.local');
+      setPassword('Password123!');
+    } else {
+      setEmail('admin@agrihub.com');
+      setPassword('agraiagrihb#1');
+    }
   };
 
   return (
@@ -144,7 +149,7 @@ export default function AdminLoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@agrihub.com"
+                placeholder={backendConnected ? 'admin@agrihub.local' : 'admin@agrihub.com'}
                 className="agri-input pl-9"
               />
             </div>
@@ -191,7 +196,9 @@ export default function AdminLoginPage() {
               onClick={setPreset}
               className="text-[11px] font-semibold text-[#047857] hover:underline"
             >
-              {tr('Load Admin Credentials (admin@agrihub.com)', 'অ্যাডমিন তথ্য পূরণ করুন')}
+              {backendConnected
+                ? tr('Load Admin Credentials (admin@agrihub.local)', 'অ্যাডমিন তথ্য পূরণ করুন (admin@agrihub.local)')
+                : tr('Load Admin Credentials (admin@agrihub.com)', 'অ্যাডমিন তথ্য পূরণ করুন (admin@agrihub.com)')}
             </button>
           </div>
 
