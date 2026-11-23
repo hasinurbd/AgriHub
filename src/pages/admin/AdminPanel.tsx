@@ -529,9 +529,10 @@ export default function AdminPanel() {
     });
 
     const seenOrderNums = new Set(dbOrders.map((o) => o.orderNumber));
+    const seenOrderIds = new Set(dbOrders.map((o) => Number(o.id)));
     const combinedOrders: OrderItem[] = [...dbOrders];
     for (const lo of localOrders) {
-      if (!seenOrderNums.has(lo.orderNumber)) {
+      if (!seenOrderNums.has(lo.orderNumber) && !seenOrderIds.has(Number(lo.id))) {
         combinedOrders.push(lo);
       }
     }
@@ -559,11 +560,11 @@ export default function AdminPanel() {
         })
       );
       const mappedSyncLogs: AuditLogItem[] = dbLogs.map((l, idx) => ({
-        id: Number(l.id ?? idx + 100),
+        id: 100000 + Number(l.id ?? idx + 1),
         action: l.action,
         actor: 'Offline Sync Engine',
         role: 'system',
-        ip_address: 'IndexedDB',
+        ip_address: 'Local',
         target: `${l.entityType}${l.entityId ? ` #${l.entityId}` : ''}`,
         created_at: l.timestamp.replace('T', ' ').slice(0, 19),
         details: { level: l.level, message: l.message }
@@ -591,8 +592,11 @@ export default function AdminPanel() {
   useEffect(() => {
     setOrders(prev => {
       if (prev.length === 0) return localOrders;
-      const seen = new Set(prev.map(o => o.orderNumber));
-      const additions = localOrders.filter(lo => !seen.has(lo.orderNumber));
+      const seenNums = new Set(prev.map(o => o.orderNumber));
+      const seenIds = new Set(prev.map(o => Number(o.id)));
+      const additions = localOrders.filter(
+        lo => !seenNums.has(lo.orderNumber) && !seenIds.has(Number(lo.id))
+      );
       return additions.length > 0 ? [...additions, ...prev] : prev;
     });
   }, [localOrders]);
@@ -609,7 +613,7 @@ export default function AdminPanel() {
 
       if (!hasConfiguredBackend()) {
         setBackendConnected(false);
-        setBackendMessage('Offline-First Mode (IndexedDB Active)');
+        setBackendMessage('Local workspace active');
         return;
       }
 
@@ -640,11 +644,11 @@ export default function AdminPanel() {
         const err = statsRes.status === 'rejected' ? statsRes.reason : null;
         if (err?.status === 401) {
           setBackendConnected(true);
-          setBackendMessage('Session expired. Operating with cached IndexedDB data.');
+          setBackendMessage('Session expired. Operating with saved local data.');
           await refreshAuth();
         } else {
           setBackendConnected(false);
-          setBackendMessage(err?.message || 'Offline-First Mode (Backend Unreachable)');
+          setBackendMessage(err?.message || 'Operating in local mode');
         }
       }
 
@@ -770,7 +774,7 @@ export default function AdminPanel() {
       }
     } catch (err: any) {
       setBackendConnected(false);
-      setBackendMessage(err?.message || 'Offline-First Mode (IndexedDB Active)');
+      setBackendMessage(err?.message || 'Local workspace active');
     } finally {
       setLoadingData(false);
     }
@@ -877,7 +881,7 @@ export default function AdminPanel() {
       showToast(
         isBackendReachable
           ? `Category '${trimmedName}' saved and synced.`
-          : `Category '${trimmedName}' saved offline to IndexedDB (queued for sync).`
+          : `Category '${trimmedName}' saved locally (queued for sync).`
       );
       setCategoryModalOpen(false);
       await loadFromIndexedDb(false);
@@ -1035,7 +1039,7 @@ export default function AdminPanel() {
       showToast(
         isBackendReachable
           ? `Product '${payload.title}' saved and synced.`
-          : `Product '${payload.title}' saved offline to IndexedDB — queued for sync.`
+          : `Product '${payload.title}' saved locally — queued for sync.`
       );
       setDrawerOpen(false);
       setEditingProduct(null);
@@ -1578,7 +1582,7 @@ export default function AdminPanel() {
       : [saved, ...warehouses];
     persistWarehouses(next);
     setWarehouseModalOpen(false);
-    showToast(`Warehouse '${saved.name}' saved to IndexedDB.`);
+    showToast(`Warehouse '${saved.name}' saved.`);
   };
 
   const handleDeleteWarehouse = async (id: number) => {
@@ -1591,7 +1595,7 @@ export default function AdminPanel() {
       });
     }
     persistWarehouses(warehouses.filter(w => w.id !== id));
-    showToast('Warehouse hub removed from IndexedDB.', 'info');
+    showToast('Warehouse hub removed.', 'info');
   };
 
   // CSV Export Helper for Reports
@@ -2581,9 +2585,9 @@ export default function AdminPanel() {
                           <p>Events will appear here as users sign in, list batches, or place orders.</p>
                         </div>
                       ) : (
-                        recentActivity.slice(0, 6).map(log => (
+                        recentActivity.slice(0, 6).map((log, idx) => (
                           <button
-                            key={log.id}
+                            key={`recent-${log.id}-${idx}`}
                             type="button"
                             onClick={() => setInspectAuditLog(log)}
                             className="w-full text-left px-5 py-3.5 hover:bg-slate-50/80 dark:hover:bg-[#13221a] transition flex items-center justify-between gap-4"
@@ -4118,8 +4122,8 @@ export default function AdminPanel() {
                       />
                       <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                         {tr(
-                          'Leave empty to run in Offline-First Sandbox mode, or point to your deployed PHP API.',
-                          'অফলাইন-ফার্স্ট ডেমো মোডের জন্য খালি রাখুন অথবা আপনার পিএইচপি এপিআই ইউআরএল দিন।'
+                          'Leave empty to work locally without a remote server, or point to your deployed PHP API.',
+                          'সার্ভার ছাড়া লোকালভাবে ব্যবহার করতে খালি রাখুন অথবা আপনার পিএইচপি এপিআই ইউআরএল দিন।'
                         )}
                       </p>
                     </div>
@@ -4234,8 +4238,8 @@ export default function AdminPanel() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 dark:divide-emerald-900/40 font-mono text-[11px]">
-                        {auditLogs.map(log => (
-                          <tr key={log.id} className="hover:bg-slate-50/60 dark:hover:bg-[#13221a]/60 transition">
+                        {auditLogs.map((log, idx) => (
+                          <tr key={`audit-${log.id}-${idx}`} className="hover:bg-slate-50/60 dark:hover:bg-[#13221a]/60 transition">
                             <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400">{log.created_at}</td>
                             <td className="py-3.5 px-4 font-bold text-emerald-800 dark:text-emerald-300">
                               <span className="bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/70 px-1.5 py-0.5 rounded">

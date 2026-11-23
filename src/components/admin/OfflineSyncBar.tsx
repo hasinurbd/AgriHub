@@ -22,7 +22,6 @@ export default function OfflineSyncBar() {
   const { tr } = useLanguage();
   const {
     syncStatus,
-    isNavigatorOnline,
     isBackendReachable,
     pendingCount,
     conflictCount,
@@ -49,9 +48,7 @@ export default function OfflineSyncBar() {
       icon: <Wifi className="w-3.5 h-3.5 text-[#047857]" strokeWidth={1.75} />
     },
     offline: {
-      label: isNavigatorOnline
-        ? tr('Offline (Local Cache)', 'অফলাইন (লোকাল ক্যাশ)')
-        : tr('Offline', 'অফলাইন'),
+      label: tr('Offline', 'অফলাইন'),
       classes: 'bg-amber-50 text-amber-800 border-amber-300/70',
       icon: <WifiOff className="w-3.5 h-3.5 text-amber-700" strokeWidth={1.75} />
     },
@@ -115,15 +112,12 @@ export default function OfflineSyncBar() {
             <span>{statusConfig.label}</span>
           </span>
 
-          {/* IndexedDB Cache Active Indicator */}
-          <span className="inline-flex items-center gap-1.5 text-slate-600 font-medium">
-            <Database className="w-3.5 h-3.5 text-[#047857]" strokeWidth={1.75} />
-            <span>
-              {isBackendReachable
-                ? tr('IndexedDB + Live PHP API', 'IndexedDB + লাইভ পিএইচপি এপিআই')
-                : tr('IndexedDB Offline-First Cache', 'IndexedDB অফলাইন-ফার্স্ট ক্যাশ')}
+          {isBackendReachable && (
+            <span className="inline-flex items-center gap-1.5 text-slate-600 font-medium">
+              <Database className="w-3.5 h-3.5 text-[#047857]" strokeWidth={1.75} />
+              <span>{tr('Live Sync Connected', 'লাইভ সিঙ্ক সংযুক্ত')}</span>
             </span>
-          </span>
+          )}
 
           {/* Pending Queue Count */}
           {pendingCount > 0 && (
@@ -206,12 +200,12 @@ export default function OfflineSyncBar() {
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm">
-                    {tr('Offline-First Sync Engine & Monitoring', 'অফলাইন-ফার্স্ট সিঙ্ক ও মনিটরিং')}
+                    {tr('Sync & Activity Monitor', 'সিঙ্ক ও অ্যাক্টিভিটি মনিটর')}
                   </h3>
                   <p className="text-[11px] text-slate-500">
                     {tr(
-                      'Dexie.js IndexedDB queue with idempotency keys & conflict resolution',
-                      'IndexedDB কিউ, ডুপ্লিকেট প্রতিরোধ ও কনফ্লিক্ট সমাধান ব্যবস্থা'
+                      'Background sync queue, activity logs, and conflict resolution',
+                      'ব্যাকগ্রাউন্ড সিঙ্ক কিউ, লগ এবং কনফ্লিক্ট সমাধান ব্যবস্থা'
                     )}
                   </p>
                 </div>

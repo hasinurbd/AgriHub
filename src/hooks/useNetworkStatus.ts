@@ -33,7 +33,7 @@ export function useNetworkStatus(pollIntervalMs = 30000): NetworkStatusState {
 
     if (!hasConfiguredBackend()) {
       setIsBackendReachable(false);
-      setStatusMessage('Offline-First Sandbox (Local IndexedDB Cache Active)');
+      setStatusMessage('Local mode active');
       setLastCheckedAt(new Date().toISOString());
       return false;
     }
@@ -65,7 +65,7 @@ export function useNetworkStatus(pollIntervalMs = 30000): NetworkStatusState {
     const onOffline = () => {
       setIsNavigatorOnline(false);
       setIsBackendReachable(false);
-      setStatusMessage('Offline — Saving all changes to IndexedDB.');
+      setStatusMessage('Offline — Changes saved locally.');
       setLastCheckedAt(new Date().toISOString());
     };
 

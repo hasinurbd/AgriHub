@@ -144,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setBackendConnected(false);
       if (isDemoModeEnabled()) {
         setIsDemoMode(true);
-        setBackendMessage('Offline-First Demo Mode (IndexedDB Active)');
+        setBackendMessage('Local mode active');
         setCurrentUser(readDemoSession());
       } else {
         setIsDemoMode(false);
@@ -173,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setBackendConnected(false);
         if (isDemoModeEnabled()) {
           setIsDemoMode(true);
-          setBackendMessage(err?.message || 'Offline-First Demo Mode (Backend Unreachable)');
+          setBackendMessage(err?.message || 'Local mode active');
           setCurrentUser(readDemoSession());
         } else {
           setIsDemoMode(false);
@@ -255,7 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const demoUser = authenticateDemoAccount(email, password);
         if (demoUser) {
           setBackendConnected(false);
-          setBackendMessage('Offline-First Demo Mode');
+          setBackendMessage('Local mode active');
           return demoUser;
         }
       }
@@ -283,7 +283,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsDemoMode(true);
         const demoUser = authenticateDemoAccount(email, password);
         if (demoUser) {
-          setBackendMessage('Offline-First Demo Mode (Backend Unreachable)');
+          setBackendMessage('Local mode active');
           return demoUser;
         }
         setCurrentUser(null);

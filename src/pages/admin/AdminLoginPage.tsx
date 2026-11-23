@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export default function AdminLoginPage() {
-  const { currentUser, isAdmin, isDemoMode, backendConnected, login, logout } = useAuth();
+  const { currentUser, isAdmin, backendConnected, login, logout } = useAuth();
   const { language, setLanguage, tr } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -211,18 +211,6 @@ export default function AdminLoginPage() {
             <span>{loading ? tr('Verifying...', 'যাচাই হচ্ছে...') : tr('Enter Admin Console', 'অ্যাডমিন কনসোলে প্রবেশ করুন')}</span>
           </button>
         </form>
-
-        {isDemoMode && (
-          <div className="p-3 rounded-xl bg-[#f0f6f2] border border-[#10b981]/25 text-[11px] text-slate-700 leading-relaxed">
-            <strong className="text-[#047857]">
-              {tr('Offline-First Mode Active:', 'অফলাইন-ফার্স্ট মোড চালু:')}
-            </strong>{' '}
-            {tr(
-              'Works directly on Vercel even if the external PHP/MySQL API is offline. Click "Load Admin Credentials" above or sign in with your admin account to manage IndexedDB records.',
-              'ব্যাকএন্ড এপিআই অফলাইনে থাকলেও এটি ভার্সেলে সরাসরি কাজ করবে। উপরে "অ্যাডমিন তথ্য পূরণ করুন" ব্যবহার করে সাইন ইন করুন।'
-            )}
-          </div>
-        )}
 
         <div className="pt-4 border-t border-[var(--border-subtle)] flex items-center justify-between text-xs text-slate-500">
           <Link to="/" className="inline-flex items-center gap-1.5 hover:text-[#047857] font-semibold">

@@ -221,7 +221,7 @@ export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farme
         type: 'success',
         text: isBackendReachable
           ? tr('Harvest batch listed and synced.', 'ফসলের ব্যাচ সফলভাবে যুক্ত ও সিঙ্ক হয়েছে।')
-          : tr('Harvest batch saved offline in IndexedDB (queued for sync).', 'ব্যাচ অফলাইনে সংরক্ষিত হয়েছে এবং অনলাইন হলে সিঙ্ক হবে।')
+          : tr('Harvest batch saved locally (queued for sync).', 'ব্যাচটি সংরক্ষিত হয়েছে এবং অনলাইন হলে সিঙ্ক হবে।')
       });
       setShowAddBatch(false);
       setTitle('');
