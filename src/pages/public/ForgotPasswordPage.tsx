@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { KeyRound, Mail, ShieldCheck, Lock, AlertTriangle, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { KeyRound, Mail, ShieldCheck, Lock, AlertTriangle, CheckCircle2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { AgriHubApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -14,6 +14,9 @@ export default function ForgotPasswordPage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -116,12 +119,24 @@ export default function ForgotPasswordPage() {
                 <Lock className="w-4 h-4 text-[#047857] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} aria-hidden="true" />
                 <input
                   id="reset-current"
-                  type="password"
+                  type={showCurrentPassword ? 'text' : 'password'}
                   required
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="agri-input pl-9"
+                  className="agri-input pl-9 pr-10"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword((prev) => !prev)}
+                  aria-label={showCurrentPassword ? tr('Hide password', 'পাসওয়ার্ড লুকান') : tr('Show password', 'পাসওয়ার্ড দেখুন')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#047857] focus:outline-none"
+                >
+                  {showCurrentPassword ? (
+                    <EyeOff className="w-4 h-4" strokeWidth={1.75} />
+                  ) : (
+                    <Eye className="w-4 h-4" strokeWidth={1.75} />
+                  )}
+                </button>
               </div>
             </div>
           ) : (
@@ -172,14 +187,26 @@ export default function ForgotPasswordPage() {
               <Lock className="w-4 h-4 text-[#047857] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} aria-hidden="true" />
               <input
                 id="reset-new"
-                type="password"
+                type={showNewPassword ? 'text' : 'password'}
                 required
                 minLength={6}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder={tr('Minimum 6 characters', 'কমপক্ষে ৬ অক্ষর')}
-                className="agri-input pl-9"
+                className="agri-input pl-9 pr-10"
               />
+              <button
+                type="button"
+                onClick={() => setShowNewPassword((prev) => !prev)}
+                aria-label={showNewPassword ? tr('Hide password', 'পাসওয়ার্ড লুকান') : tr('Show password', 'পাসওয়ার্ড দেখুন')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#047857] focus:outline-none"
+              >
+                {showNewPassword ? (
+                  <EyeOff className="w-4 h-4" strokeWidth={1.75} />
+                ) : (
+                  <Eye className="w-4 h-4" strokeWidth={1.75} />
+                )}
+              </button>
             </div>
           </div>
 
@@ -191,14 +218,26 @@ export default function ForgotPasswordPage() {
               <Lock className="w-4 h-4 text-[#047857] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" strokeWidth={1.75} aria-hidden="true" />
               <input
                 id="reset-confirm"
-                type="password"
+                type={showConfirmPassword ? 'text' : 'password'}
                 required
                 minLength={6}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="••••••••"
-                className="agri-input pl-9"
+                className="agri-input pl-9 pr-10"
               />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                aria-label={showConfirmPassword ? tr('Hide password', 'পাসওয়ার্ড লুকান') : tr('Show password', 'পাসওয়ার্ড দেখুন')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#047857] focus:outline-none"
+              >
+                {showConfirmPassword ? (
+                  <EyeOff className="w-4 h-4" strokeWidth={1.75} />
+                ) : (
+                  <Eye className="w-4 h-4" strokeWidth={1.75} />
+                )}
+              </button>
             </div>
           </div>
 

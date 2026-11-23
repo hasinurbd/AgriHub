@@ -1,11 +1,22 @@
 import React, { useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { ShieldCheck, Mail, Lock, AlertTriangle, LogIn, ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import {
+  ShieldCheck,
+  Mail,
+  Lock,
+  AlertTriangle,
+  LogIn,
+  ArrowLeft,
+  Eye,
+  EyeOff,
+  LayoutDashboard
+} from 'lucide-react';
+import { hasConfiguredBackend, isDemoModeEnabled } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export default function AdminLoginPage() {
-  const { currentUser, isAdmin, backendConnected, login, logout } = useAuth();
+  const { currentUser, isAdmin, backendConnected, login, loginDemoRole, logout } = useAuth();
   const { language, setLanguage, tr } = useLanguage();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -22,9 +33,16 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const canDirectOpen = (!hasConfiguredBackend() || !backendConnected) && isDemoModeEnabled();
+
   if (currentUser && isAdmin) {
     return <Navigate to={targetRedirect} replace />;
   }
+
+  const handleInstantAdminEntry = () => {
+    loginDemoRole('admin');
+    navigate(targetRedirect, { replace: true });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,15 +110,39 @@ export default function AdminLoginPage() {
 
         <div>
           <h1 className="text-xl font-extrabold text-slate-950 tracking-tight">
-            {tr('Administrator Sign In', 'অ্যাডমিনিস্ট্রেটর সাইন ইন')}
+            {tr('Admin Console Access', 'অ্যাডমিন কনসোল প্রবেশ')}
           </h1>
           <p className="text-xs text-slate-600 mt-1">
-            {tr(
-              'Sign in with authorized administrator credentials to manage AgriHub operations.',
-              'অ্যাগ্রিহাব পরিচালনা করতে অনুমোদিত অ্যাডমিন অ্যাকাউন্ট দিয়ে সাইন ইন করুন।'
-            )}
+            {canDirectOpen
+              ? tr(
+                  'No database or password is required right now. Open the Admin Panel directly or sign in below when connecting your server.',
+                  'এই মুহূর্তে কোনো ডাটাবেজ বা পাসওয়ার্ড প্রয়োজন নেই। সরাসরি অ্যাডমিন প্যানেল খুলুন অথবা সার্ভার সংযুক্ত করলে নিচে সাইন ইন করুন।'
+                )
+              : tr(
+                  'Sign in with authorized administrator credentials to manage AgriHub operations.',
+                  'অ্যাগ্রিহাব পরিচালনা করতে অনুমোদিত অ্যাডমিন অ্যাকাউন্ট দিয়ে সাইন ইন করুন।'
+                )}
           </p>
         </div>
+
+        {canDirectOpen && (
+          <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 space-y-2.5">
+            <button
+              type="button"
+              onClick={handleInstantAdminEntry}
+              className="agri-btn agri-btn-primary w-full py-3"
+            >
+              <LayoutDashboard className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+              <span>{tr('Open Admin Panel (No Password Needed)', 'পাসওয়ার্ড ছাড়াই অ্যাডমিন প্যানেল খুলুন')}</span>
+            </button>
+            <p className="text-[11px] text-emerald-900/80 text-center">
+              {tr(
+                'Works instantly on Vercel — export your SQL file anytime from the top bar.',
+                'ভার্চেলে তাৎক্ষণিকভাবে কাজ করে — যেকোনো সময় উপরের বার থেকে SQL ডাউনলোড করতে পারবেন।'
+              )}
+            </p>
+          </div>
+        )}
 
         {currentUser && !isAdmin && (
           <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-2">
@@ -109,6 +151,15 @@ export default function AdminLoginPage() {
               <strong>{currentUser.full_name}</strong> ({currentUser.role}).
             </div>
             <div className="flex flex-wrap gap-2">
+              {canDirectOpen && (
+                <button
+                  type="button"
+                  onClick={handleInstantAdminEntry}
+                  className="px-3 py-1.5 rounded-lg bg-[#047857] text-white font-semibold hover:bg-[#065f46]"
+                >
+                  {tr('Switch to Local Admin', 'লোকাল অ্যাডমিনে যান')}
+                </button>
+              )}
               <Link
                 to="/portal"
                 className="px-3 py-1.5 rounded-lg bg-white border border-amber-300 font-semibold text-amber-900 hover:bg-amber-100"

@@ -33,7 +33,7 @@ interface CategorySegment {
   color: string;
 }
 
-export function CategoryDoughnutChart({
+export const CategoryDoughnutChart = React.memo(function CategoryDoughnutChart({
   segments,
   totalProducts,
   centerLabel = 'Active Batches'
@@ -104,9 +104,9 @@ export function CategoryDoughnutChart({
       </div>
     </div>
   );
-}
+});
 
-export function ReportsTradeBarChart({ orders }: { orders: OrderItem[] }) {
+export const ReportsTradeBarChart = React.memo(function ReportsTradeBarChart({ orders }: { orders: OrderItem[] }) {
   const { isDark } = useTheme();
 
   const statuses: OrderItem['orderStatus'][] = [
@@ -195,9 +195,9 @@ export function ReportsTradeBarChart({ orders }: { orders: OrderItem[] }) {
       <Bar data={data} options={options} />
     </div>
   );
-}
+});
 
-export function CategoryStockBarChart({ products }: { products: ProductItem[] }) {
+export const CategoryStockBarChart = React.memo(function CategoryStockBarChart({ products }: { products: ProductItem[] }) {
   const { isDark } = useTheme();
 
   const { labels, stockUnits, inventoryValues } = useMemo(() => {
@@ -285,4 +285,4 @@ export function CategoryStockBarChart({ products }: { products: ProductItem[] })
       <Bar data={data} options={options} />
     </div>
   );
-}
+});

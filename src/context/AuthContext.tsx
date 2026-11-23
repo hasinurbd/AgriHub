@@ -8,6 +8,12 @@ import {
   setApiBaseUrl
 } from '../api';
 import { INITIAL_USERS } from '../mockData';
+import {
+  applySavedProfileToUser,
+  readPersistedSession,
+  saveAccountSnapshot,
+  writePersistedSession
+} from '../utils/accountVault';
 
 const DEMO_SESSION_KEY = 'agrihub_demo_session';
 const DEMO_REGISTERED_USERS_KEY = 'agrihub_demo_users';
@@ -129,7 +135,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<any | null>(null);
+  const [currentUser, setCurrentUser] = useState<any | null>(() => readPersistedSession() || readDemoSession());
   const [loadingUser, setLoadingUser] = useState<boolean>(true);
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
   const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
@@ -142,14 +148,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!hasConfiguredBackend()) {
       setBackendConnected(false);
+      const savedSession = readPersistedSession() || readDemoSession();
       if (isDemoModeEnabled()) {
         setIsDemoMode(true);
         setBackendMessage('Local mode active');
-        setCurrentUser(readDemoSession());
+        const restored = applySavedProfileToUser(savedSession);
+        setCurrentUser(restored);
+        if (restored) writePersistedSession(restored);
       } else {
         setIsDemoMode(false);
         setBackendMessage('Backend API URL is not configured.');
-        setCurrentUser(null);
+        setCurrentUser(savedSession);
       }
       setLoadingUser(false);
       return;
@@ -161,24 +170,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsDemoMode(false);
       setBackendMessage('Service online');
       writeDemoSession(null);
-      setCurrentUser(meRes.success && meRes.data ? meRes.data : null);
+      if (meRes.success && meRes.data) {
+        const merged = applySavedProfileToUser(meRes.data);
+        writePersistedSession(merged);
+        setCurrentUser(merged);
+      } else {
+        writePersistedSession(null);
+        setCurrentUser(null);
+      }
     } catch (err: any) {
       if (err instanceof ApiError && err.isHttpError && err.status !== 503) {
         setBackendConnected(true);
-        setIsDemoMode(false);
-        setBackendMessage('Service online');
-        writeDemoSession(null);
-        setCurrentUser(null);
+        const activeLocalSession = isDemoModeEnabled() ? (readDemoSession() || readPersistedSession()) : null;
+        if (activeLocalSession && (activeLocalSession.is_demo || isDemoModeEnabled())) {
+          setIsDemoMode(Boolean(activeLocalSession.is_demo));
+          setBackendMessage(
+            activeLocalSession.is_demo
+              ? 'Service online (sign in required to sync)'
+              : 'Service online'
+          );
+          const restored = applySavedProfileToUser(activeLocalSession);
+          setCurrentUser(restored);
+        } else {
+          setIsDemoMode(false);
+          setBackendMessage('Service online');
+          writeDemoSession(null);
+          writePersistedSession(null);
+          setCurrentUser(null);
+        }
       } else {
         setBackendConnected(false);
+        const fallbackSession = readPersistedSession() || readDemoSession();
         if (isDemoModeEnabled()) {
           setIsDemoMode(true);
           setBackendMessage(err?.message || 'Local mode active');
-          setCurrentUser(readDemoSession());
+          setCurrentUser(applySavedProfileToUser(fallbackSession));
         } else {
           setIsDemoMode(false);
           setBackendMessage(err?.message || 'Service unavailable');
-          setCurrentUser(null);
+          setCurrentUser(fallbackSession);
         }
       }
     } finally {
@@ -190,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     checkConnection();
   }, [checkConnection]);
 
-  const authenticateDemoAccount = (email: string, password: string): any | null => {
+  const authenticateDemoAccount = useCallback((email: string, password: string): any | null => {
     const normalized = email.trim().toLowerCase();
     const allDemo = [...BUILTIN_DEMO_ACCOUNTS, ...readExtraDemoUsers()];
     const match = allDemo.find(
@@ -198,7 +228,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
     if (!match) return null;
 
-    const userPayload = {
+    const userPayload = applySavedProfileToUser({
       id: match.id,
       role: match.role,
       full_name: match.full_name,
@@ -208,16 +238,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       address: match.address,
       is_verified: match.is_verified,
       is_demo: true
-    };
+    });
     writeDemoSession(userPayload);
+    writePersistedSession(userPayload);
     setCurrentUser(userPayload);
     setIsDemoMode(true);
     return userPayload;
-  };
+  }, []);
 
-  const loginDemoRole = (role: 'admin' | 'farmer' | 'supplier' | 'buyer') => {
+  const loginDemoRole = useCallback((role: 'admin' | 'farmer' | 'supplier' | 'buyer') => {
+    try {
+      sessionStorage.removeItem('agrihub_admin_signed_out');
+    } catch {
+      // Ignore storage errors
+    }
     const match = BUILTIN_DEMO_ACCOUNTS.find((acc) => acc.role === role) || BUILTIN_DEMO_ACCOUNTS[0];
-    const userPayload = {
+    const userPayload = applySavedProfileToUser({
       id: match.id,
       role: match.role,
       full_name: match.full_name,
@@ -227,14 +263,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       address: match.address,
       is_verified: match.is_verified,
       is_demo: true
-    };
+    });
     writeDemoSession(userPayload);
+    writePersistedSession(userPayload);
     setCurrentUser(userPayload);
     setIsDemoMode(true);
     return userPayload;
-  };
+  }, []);
 
-  const login = async (email: string, password: string): Promise<any | null> => {
+  const login = useCallback(async (email: string, password: string): Promise<any | null> => {
+    try {
+      sessionStorage.removeItem('agrihub_admin_signed_out');
+    } catch {
+      // Ignore storage errors
+    }
     setLoadingUser(true);
     try {
       if (hasConfiguredBackend()) {
@@ -244,9 +286,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsDemoMode(false);
           setBackendMessage('Service online');
           writeDemoSession(null);
-          setCurrentUser(res.data);
-          return res.data;
+          const mergedUser = applySavedProfileToUser(res.data);
+          writePersistedSession(mergedUser);
+          setCurrentUser(mergedUser);
+          return mergedUser;
         }
+        writePersistedSession(null);
         setCurrentUser(null);
         return null;
       }
@@ -296,9 +341,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoadingUser(false);
     }
-  };
+  }, [authenticateDemoAccount]);
 
-  const register = async (data: any): Promise<boolean> => {
+  const register = useCallback(async (data: any): Promise<boolean> => {
     setLoadingUser(true);
     try {
       if (hasConfiguredBackend()) {
@@ -350,6 +395,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           is_demo: true
         };
         writeDemoSession(userPayload);
+        writePersistedSession(userPayload);
+        saveAccountSnapshot(userPayload, {
+          profile: {
+            full_name: userPayload.full_name,
+            phone: userPayload.phone,
+            business_name: userPayload.business_name,
+            address: userPayload.address,
+            email: userPayload.email
+          }
+        });
         setIsDemoMode(true);
         setCurrentUser(userPayload);
         return true;
@@ -359,7 +414,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoadingUser(false);
     }
-  };
+  }, []);
 
   const updateCurrentUserProfile = useCallback(
     async (updates: {
@@ -379,6 +434,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       setCurrentUser(nextUser);
+      writePersistedSession(nextUser);
+      saveAccountSnapshot(nextUser, {
+        profile: {
+          full_name: nextUser.full_name,
+          phone: nextUser.phone,
+          business_name: nextUser.business_name,
+          address: nextUser.address,
+          email: nextUser.email
+        }
+      });
 
       if (isDemoMode || nextUser.is_demo || !hasConfiguredBackend()) {
         writeDemoSession(nextUser);
@@ -415,8 +480,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Clear local auth state even if backend call fails
     } finally {
       setCurrentUser(null);
+      writePersistedSession(null);
       writeDemoSession(null);
-      localStorage.removeItem('agrihub_user');
+      try {
+        localStorage.removeItem('agrihub_user');
+        localStorage.removeItem('agrihub_cart_v1');
+        localStorage.removeItem('agrihub_orders_v1');
+      } catch {
+        // Ignore storage errors
+      }
     }
   }, [backendConnected]);
 
@@ -458,6 +530,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       apiUrl,
       setApiUrl,
       checkConnection,
+      login,
+      loginDemoRole,
+      register,
       updateCurrentUserProfile,
       logout,
       isAdmin

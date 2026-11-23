@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { AgriHubApi } from '../api';
 import { INITIAL_ORDERS, OrderItem, ProductItem } from '../mockData';
+import { ensureOfflineDbSeeded, offlineDb } from '../lib/offlineDb';
 import { useAuth } from './AuthContext';
 import { useLanguage } from './LanguageContext';
 import { formatCurrency, formatNumber } from '../utils/formatters';
@@ -29,6 +30,12 @@ import {
   roundCurrency
 } from '../utils/pricing';
 import { normalizeApiOrderToOrderItem } from '../utils/invoiceGenerator';
+import {
+  getAccountVaultKey,
+  loadAccountSnapshot,
+  readPersistedSession,
+  saveAccountSnapshot
+} from '../utils/accountVault';
 
 const InvoiceModal = lazy(() => import('../components/common/InvoiceModal'));
 
@@ -69,10 +76,12 @@ function loadStoredCart(): CheckoutCartItem[] {
 
 function loadStoredOrders(): OrderItem[] {
   try {
+    const activeSession = readPersistedSession() || localStorage.getItem('agrihub_demo_session');
+    if (!activeSession) return [];
     const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     }
@@ -107,29 +116,165 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [cartToast, setCartToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
-    } catch {
-      // ignore storage errors
-    }
-  }, [cartItems]);
+  const prevUserRef = useRef<any | null>(currentUser);
+  const prevAccountKeyRef = useRef<string | null>(getAccountVaultKey(currentUser));
+  const accountStateRef = useRef({
+    cartItems,
+    localOrders,
+    customerName,
+    customerEmail,
+    customerPhone,
+    deliveryAddress
+  });
+
+  accountStateRef.current = {
+    cartItems,
+    localOrders,
+    customerName,
+    customerEmail,
+    customerPhone,
+    deliveryAddress
+  };
 
   useEffect(() => {
     try {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(localOrders));
+      if (currentUser) {
+        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
+      } else if (cartItems.length > 0) {
+        localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
+      } else {
+        localStorage.removeItem(CART_STORAGE_KEY);
+      }
     } catch {
       // ignore storage errors
     }
-  }, [localOrders]);
+  }, [cartItems, currentUser]);
 
   useEffect(() => {
-    if (currentUser) {
+    try {
+      if (currentUser) {
+        localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(localOrders));
+      } else {
+        localStorage.removeItem(ORDERS_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [localOrders, currentUser]);
+
+  // Continuously keep signed-in user's account vault updated across edits
+  useEffect(() => {
+    if (!currentUser) return;
+    saveAccountSnapshot(currentUser, {
+      cartItems,
+      orders: localOrders,
+      checkoutInfo: {
+        customerName,
+        customerEmail,
+        customerPhone,
+        deliveryAddress
+      }
+    });
+  }, [currentUser, cartItems, localOrders, customerName, customerEmail, customerPhone, deliveryAddress]);
+
+  // Handle login/logout transitions cleanly:
+  // - On browser refresh while logged in: prevAccountKey === nextAccountKey -> nothing wiped, session & data stay intact!
+  // - On explicit logout: snapshot saved, active cart/orders/customer fields wiped clean!
+  // - On subsequent login: restore that account's saved cart, orders, and profile fields!
+  useEffect(() => {
+    const prevKey = prevAccountKeyRef.current;
+    const prevUser = prevUserRef.current;
+    const nextKey = getAccountVaultKey(currentUser);
+
+    if (prevKey && prevKey !== nextKey) {
+      saveAccountSnapshot(prevUser, {
+        cartItems: accountStateRef.current.cartItems,
+        orders: accountStateRef.current.localOrders,
+        checkoutInfo: {
+          customerName: accountStateRef.current.customerName,
+          customerEmail: accountStateRef.current.customerEmail,
+          customerPhone: accountStateRef.current.customerPhone,
+          deliveryAddress: accountStateRef.current.deliveryAddress
+        }
+      });
+    }
+
+    if (!currentUser && prevKey) {
+      // Logged out -> wipe active UI cart, orders, and checkout info cleanly
+      setCartItems([]);
+      setLocalOrders([]);
+      setCustomerName('');
+      setCustomerEmail('');
+      setCustomerPhone('');
+      setDeliveryAddress('');
+      setAppliedCoupon('');
+      setCouponInput('');
+      setActiveInvoiceOrder(null);
+      setDrawerOpen(false);
+      try {
+        localStorage.removeItem(CART_STORAGE_KEY);
+        localStorage.removeItem(ORDERS_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    } else if (currentUser && nextKey && nextKey !== prevKey) {
+      // Logged in (or switched account) -> restore saved account items & info
+      const snapshot = loadAccountSnapshot(currentUser);
+      if (snapshot) {
+        if (Array.isArray(snapshot.cartItems)) {
+          setCartItems((guestItems) =>
+            snapshot.cartItems && snapshot.cartItems.length > 0 ? snapshot.cartItems : guestItems
+          );
+        }
+        const restoredOrders =
+          Array.isArray(snapshot.orders) && snapshot.orders.length > 0
+            ? snapshot.orders
+            : INITIAL_ORDERS;
+        setLocalOrders(restoredOrders);
+        if (snapshot.orders && snapshot.orders.length > 0) {
+          ensureOfflineDbSeeded()
+            .then(() =>
+              offlineDb.orders.bulkPut(
+                snapshot.orders!.map((o) => ({
+                  ...o,
+                  syncStatus: (o as any).syncStatus || 'pending',
+                  localUpdatedAt: (o as any).localUpdatedAt || new Date().toISOString()
+                }))
+              )
+            )
+            .catch(() => {});
+        }
+        setCustomerName(
+          snapshot.checkoutInfo?.customerName ||
+            currentUser.business_name ||
+            currentUser.full_name ||
+            ''
+        );
+        setCustomerEmail(snapshot.checkoutInfo?.customerEmail || currentUser.email || '');
+        setCustomerPhone(snapshot.checkoutInfo?.customerPhone || currentUser.phone || '+880 1711-000800');
+        setDeliveryAddress(
+          snapshot.checkoutInfo?.deliveryAddress ||
+            currentUser.address ||
+            'FreshBasket Central Distribution Hub, Tejgaon, Dhaka 1215'
+        );
+      } else {
+        setLocalOrders(INITIAL_ORDERS);
+        setCustomerName(currentUser.business_name || currentUser.full_name || '');
+        setCustomerEmail(currentUser.email || '');
+        setCustomerPhone(currentUser.phone || '+880 1711-000800');
+        setDeliveryAddress(
+          currentUser.address || 'FreshBasket Central Distribution Hub, Tejgaon, Dhaka 1215'
+        );
+      }
+    } else if (currentUser) {
       setCustomerName((prev) => prev || currentUser.business_name || currentUser.full_name || '');
       setCustomerEmail((prev) => prev || currentUser.email || '');
       setCustomerPhone((prev) => currentUser.phone || prev);
       setDeliveryAddress((prev) => currentUser.address || prev);
     }
+
+    prevUserRef.current = currentUser;
+    prevAccountKeyRef.current = nextKey;
   }, [currentUser]);
 
   useEffect(() => {
@@ -274,26 +419,54 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const recordOrder = useCallback((order: OrderItem) => {
-    setLocalOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+    setLocalOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id && o.orderNumber !== order.orderNumber)]);
+    ensureOfflineDbSeeded()
+      .then(() =>
+        offlineDb.orders.put({
+          ...order,
+          syncStatus: 'pending',
+          localUpdatedAt: new Date().toISOString()
+        })
+      )
+      .catch(() => {
+        // Non-blocking fallback if IndexedDB is unavailable
+      });
   }, []);
 
   const updateLocalOrderStatus = useCallback((orderId: number, status: OrderItem['orderStatus']) => {
+    const nextPaymentStatus =
+      status === 'delivered'
+        ? 'paid'
+        : status === 'cancelled'
+        ? 'refunded'
+        : undefined;
+
     setLocalOrders((prev) =>
       prev.map((item) =>
         item.id === orderId
           ? {
               ...item,
               orderStatus: status,
-              paymentStatus:
-                status === 'delivered'
-                  ? 'paid'
-                  : status === 'cancelled'
-                  ? 'refunded'
-                  : item.paymentStatus
+              paymentStatus: nextPaymentStatus || item.paymentStatus
             }
           : item
       )
     );
+
+    ensureOfflineDbSeeded()
+      .then(async () => {
+        const existing = await offlineDb.orders.get(orderId);
+        if (existing) {
+          await offlineDb.orders.update(orderId, {
+            orderStatus: status,
+            paymentStatus: (nextPaymentStatus || existing.paymentStatus) as OrderItem['paymentStatus'],
+            localUpdatedAt: new Date().toISOString()
+          });
+        }
+      })
+      .catch(() => {
+        // Ignore IndexedDB error
+      });
   }, []);
 
   const breakdown = useMemo(

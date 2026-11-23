@@ -1,15 +1,17 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { OfflineSyncProvider } from './context/OfflineSyncContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { CartProvider } from './context/CartContext';
+import { hasConfiguredBackend, isDemoModeEnabled } from './api';
 import ErrorBoundary from './components/ErrorBoundary';
 import Navbar from './components/public/Navbar';
 import Footer from './components/public/Footer';
 import {
   ShieldAlert,
+  ShieldCheck,
   LogIn,
   ShoppingBag,
   RefreshCw
@@ -39,17 +41,32 @@ function RouteLoader() {
   );
 }
 
-// Protected Admin Route wrapper enforcing role === 'admin'
+// Protected Admin Route wrapper enforcing role === 'admin', with zero-password auto-entry when no DB backend is configured
 function ProtectedAdminRoute() {
-  const { currentUser, isAdmin, loadingUser } = useAuth();
+  const { currentUser, isAdmin, loadingUser, loginDemoRole } = useAuth();
   const { tr } = useLanguage();
 
-  if (loadingUser) {
+  const canAutoEnterLocalAdmin = (() => {
+    if (hasConfiguredBackend() || !isDemoModeEnabled()) return false;
+    try {
+      return sessionStorage.getItem('agrihub_admin_signed_out') !== '1';
+    } catch {
+      return true;
+    }
+  })();
+
+  useEffect(() => {
+    if (!loadingUser && !currentUser && canAutoEnterLocalAdmin) {
+      loginDemoRole('admin');
+    }
+  }, [loadingUser, currentUser, canAutoEnterLocalAdmin, loginDemoRole]);
+
+  if (loadingUser || (!currentUser && canAutoEnterLocalAdmin)) {
     return (
       <div className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
         <div className="agri-card bg-white p-6 flex items-center gap-3 text-xs font-semibold text-slate-700">
           <RefreshCw className="w-4 h-4 text-[#047857] animate-spin" strokeWidth={1.75} />
-          <span>{tr('Verifying session permissions...', 'সেশন অনুমতি যাচাই করা হচ্ছে...')}</span>
+          <span>{tr('Opening Admin Console...', 'অ্যাডমিন কনসোল খোলা হচ্ছে...')}</span>
         </div>
       </div>
     );
@@ -60,6 +77,7 @@ function ProtectedAdminRoute() {
   }
 
   if (!isAdmin) {
+    const canInstantSwitch = !hasConfiguredBackend() && isDemoModeEnabled();
     return (
       <div className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
         <div className="agri-card bg-white rounded-3xl max-w-md w-full p-8 shadow-xl text-center space-y-4">
@@ -74,16 +92,27 @@ function ProtectedAdminRoute() {
             <strong className="text-slate-900">{currentUser.full_name}</strong> (
             <span className="capitalize font-semibold text-[#047857]">{currentUser.role}</span>).{' '}
             {tr(
-              'Access to the Admin Console requires an administrator account.',
-              'অ্যাডমিন কনসোলে প্রবেশের জন্য অ্যাডমিন অ্যাকাউন্ট প্রয়োজন।'
+              'Switch to an administrator session to manage the AgriHub Admin Console.',
+              'অ্যাগ্রিহাব অ্যাডমিন কনসোল পরিচালনা করতে অ্যাডমিন সেশনে প্রবেশ করুন।'
             )}
           </p>
 
           <div className="space-y-2 pt-2">
-            <Link to="/admin/login" className="agri-btn agri-btn-primary w-full">
-              <LogIn className="w-4 h-4 shrink-0" strokeWidth={1.75} />
-              <span>{tr('Sign In with Administrator Account', 'অ্যাডমিন অ্যাকাউন্ট দিয়ে সাইন ইন করুন')}</span>
-            </Link>
+            {canInstantSwitch ? (
+              <button
+                type="button"
+                onClick={() => loginDemoRole('admin')}
+                className="agri-btn agri-btn-primary w-full"
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+                <span>{tr('Open Admin Panel (No Password Needed)', 'পাসওয়ার্ড ছাড়াই অ্যাডমিন প্যানেল খুলুন')}</span>
+              </button>
+            ) : (
+              <Link to="/admin/login" className="agri-btn agri-btn-primary w-full">
+                <LogIn className="w-4 h-4 shrink-0" strokeWidth={1.75} />
+                <span>{tr('Sign In with Administrator Account', 'অ্যাডমিন অ্যাকাউন্ট দিয়ে সাইন ইন করুন')}</span>
+              </Link>
+            )}
 
             <Link to="/marketplace" className="agri-btn agri-btn-secondary w-full">
               <ShoppingBag className="w-4 h-4 text-[#047857] shrink-0" strokeWidth={1.75} />

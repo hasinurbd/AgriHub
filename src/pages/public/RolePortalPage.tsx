@@ -18,7 +18,7 @@ import {
   FileDown,
   Eye
 } from 'lucide-react';
-import { AgriHubApi, hasConfiguredBackend } from '../../api';
+import { AgriHubApi, hasConfiguredBackend, isDemoModeEnabled } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useOfflineSync } from '../../context/OfflineSyncContext';
 import { useLanguage, translateRole } from '../../context/LanguageContext';
@@ -31,15 +31,14 @@ import {
   formatOrderStatusLabel,
   normalizeApiOrderToOrderItem
 } from '../../utils/invoiceGenerator';
-import { downloadInvoicePdf, downloadOrderSummaryPdf } from '../../utils/pdfExport';
 
 export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farmer' | 'buyer' | 'supplier' }) {
-  const { currentUser, backendConnected } = useAuth();
+  const { currentUser, backendConnected, loginDemoRole } = useAuth();
   const { saveProductOfflineFirst, saveShipmentOfflineFirst, isBackendReachable } = useOfflineSync();
   const { language, tr } = useLanguage();
   const { localOrders, openInvoice, updateLocalOrderStatus } = useCart();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -138,8 +137,68 @@ export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farme
   useEffect(() => {
     if (currentUser) {
       loadPortalData();
+    } else {
+      setLoading(false);
     }
   }, [currentUser?.id, activeRole]);
+
+  if (!currentUser) {
+    const portalRole = expectedRole || 'buyer';
+    const canInstantEnter = (!hasConfiguredBackend() || !backendConnected) && isDemoModeEnabled();
+    const roleLabel =
+      portalRole === 'farmer'
+        ? tr('Farmer Harvest Portal', 'কৃষক ফসল ও বিক্রয় পোর্টাল')
+        : portalRole === 'supplier'
+        ? tr('Transport & Cold-Chain Portal', 'পরিবহন ও কোল্ড-চেইন পোর্টাল')
+        : tr('Buyer Procurement Portal', 'ক্রেতা ক্রয় ও ট্র্যাকিং পোর্টাল');
+
+    return (
+      <div className="min-h-[calc(100vh-140px)] flex items-center justify-center p-4 bg-[#f7faf8]">
+        <div className="agri-card rounded-2xl max-w-md w-full p-7 shadow-lg bg-white text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-[#d1fae5]/75 border border-[#10b981]/30 text-[#047857] flex items-center justify-center mx-auto">
+            {portalRole === 'farmer' ? (
+              <Sprout className="w-6 h-6" strokeWidth={1.75} />
+            ) : portalRole === 'supplier' ? (
+              <Truck className="w-6 h-6" strokeWidth={1.75} />
+            ) : (
+              <ShoppingBag className="w-6 h-6" strokeWidth={1.75} />
+            )}
+          </div>
+          <h1 className="text-lg font-bold text-slate-900">{roleLabel}</h1>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            {canInstantEnter
+              ? tr(
+                  'Open this workspace directly without a database or password, or sign in with your registered member account.',
+                  'ডাটাবেজ বা পাসওয়ার্ড ছাড়াই সরাসরি এই ওয়ার্কস্পেস খুলুন, অথবা নিবন্ধিত অ্যাকাউন্টে সাইন ইন করুন।'
+                )
+              : tr(
+                  'Please sign in with your member account to manage batches, orders, and shipments.',
+                  'ব্যাচ, অর্ডার ও পরিবহন পরিচালনা করতে আপনার সদস্য অ্যাকাউন্টে সাইন ইন করুন।'
+                )}
+          </p>
+          <div className="space-y-2 pt-2">
+            {canInstantEnter && (
+              <button
+                type="button"
+                onClick={() => loginDemoRole(portalRole)}
+                className="agri-btn agri-btn-primary w-full"
+              >
+                <span>{tr('Open Workspace (No Password Needed)', 'পাসওয়ার্ড ছাড়াই পোর্টাল খুলুন')}</span>
+              </button>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Link to="/login" className="agri-btn agri-btn-secondary flex-1">
+                {tr('Member Sign In', 'সাইন ইন')}
+              </Link>
+              <Link to="/marketplace" className="agri-btn agri-btn-secondary flex-1">
+                {tr('Marketplace', 'মার্কেটপ্লেস')}
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Prevent cross-role access if user manually enters another role's URL
   if (expectedRole && currentUser && currentUser.role !== expectedRole && currentUser.role !== 'admin') {
@@ -266,6 +325,7 @@ export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farme
   const handleDirectPdf = async (order: OrderItem, mode: 'invoice' | 'summary') => {
     try {
       const invoice = buildInvoiceFromOrder(order);
+      const { downloadInvoicePdf, downloadOrderSummaryPdf } = await import('../../utils/pdfExport');
       if (mode === 'invoice') {
         await downloadInvoicePdf(invoice, language);
       } else {
@@ -435,12 +495,12 @@ export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farme
       )}
 
       {!backendConnected && (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
-          <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" strokeWidth={1.75} />
+        <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs text-emerald-950 flex items-center gap-2.5">
+          <CheckCircle2 className="w-4 h-4 text-[#047857] shrink-0" strokeWidth={1.75} />
           <span>
             {tr(
-              'Live updates are currently paused. Showing your saved trade records.',
-              'লাইভ আপডেট সাময়িকভাবে বিরতিতে আছে। আপনার সংরক্ষিত বাণিজ্য তথ্য দেখানো হচ্ছে।'
+              'Instant local workspace active — all trade records and changes are saved cleanly in your browser.',
+              'লোকাল ওয়ার্কস্পেস সক্রিয় রয়েছে — আপনার সকল বাণিজ্যিক তথ্য ও পরিবর্তন ব্রাউজারে নিরাপদে সংরক্ষিত হচ্ছে।'
             )}
           </span>
         </div>

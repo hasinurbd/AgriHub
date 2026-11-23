@@ -12,13 +12,29 @@ import {
   Check,
   GitMerge,
   Trash2,
-  Activity
+  Activity,
+  Download,
+  LogIn
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import { useOfflineSync } from '../../context/OfflineSyncContext';
 import { useLanguage } from '../../context/LanguageContext';
 import type { SyncConflictRecord } from '../../lib/offlineDb';
+import type { OrderItem } from '../../mockData';
+import type { SqlExportResult } from '../../utils/sqlExport';
 
-export default function OfflineSyncBar() {
+interface OfflineSyncBarProps {
+  extraOrders?: OrderItem[];
+  onRequestServerLogin?: () => void;
+  onSqlDownloaded?: (result: SqlExportResult) => void;
+}
+
+const OfflineSyncBar = React.memo(function OfflineSyncBar({
+  extraOrders = [],
+  onRequestServerLogin,
+  onSqlDownloaded
+}: OfflineSyncBarProps) {
+  const { currentUser } = useAuth();
   const { tr } = useLanguage();
   const {
     syncStatus,
@@ -40,6 +56,27 @@ export default function OfflineSyncBar() {
   const [resolvingId, setResolvingId] = useState<number | null>(null);
   const [mergePrice, setMergePrice] = useState<Record<number, string>>({});
   const [mergeQty, setMergeQty] = useState<Record<number, string>>({});
+  const [downloadingSql, setDownloadingSql] = useState(false);
+
+  const isLocalSessionWithLiveServer = Boolean(isBackendReachable && currentUser?.is_demo);
+
+  const handleSyncClick = async () => {
+    const summary = await triggerSync(true);
+    if (summary.awaitingAuth && onRequestServerLogin) {
+      onRequestServerLogin();
+    }
+  };
+
+  const handleDownloadSqlClick = async () => {
+    setDownloadingSql(true);
+    try {
+      const { downloadUpdatedSqlFile } = await import('../../utils/sqlExport');
+      const result = await downloadUpdatedSqlFile(extraOrders);
+      onSqlDownloaded?.(result);
+    } finally {
+      setDownloadingSql(false);
+    }
+  };
 
   const statusConfig = {
     online: {
@@ -112,11 +149,22 @@ export default function OfflineSyncBar() {
             <span>{statusConfig.label}</span>
           </span>
 
-          {isBackendReachable && (
+          {isBackendReachable && !currentUser?.is_demo && (
             <span className="inline-flex items-center gap-1.5 text-slate-600 font-medium">
               <Database className="w-3.5 h-3.5 text-[#047857]" strokeWidth={1.75} />
               <span>{tr('Live Sync Connected', 'লাইভ সিঙ্ক সংযুক্ত')}</span>
             </span>
+          )}
+
+          {isLocalSessionWithLiveServer && (
+            <button
+              type="button"
+              onClick={onRequestServerLogin}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-[#047857] font-bold hover:bg-emerald-100 transition"
+            >
+              <LogIn className="w-3.5 h-3.5" strokeWidth={1.75} />
+              <span>{tr('Server Online — Sign In to Sync', 'সার্ভার অনলাইন — সিঙ্ক করতে সাইন ইন করুন')}</span>
+            </button>
           )}
 
           {/* Pending Queue Count */}
@@ -154,7 +202,7 @@ export default function OfflineSyncBar() {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {lastSyncedAt && (
             <span className="hidden md:inline text-[11px] text-slate-500 font-mono">
               {tr('Last sync:', 'সর্বশেষ সিঙ্ক:')}{' '}
@@ -164,7 +212,21 @@ export default function OfflineSyncBar() {
 
           <button
             type="button"
-            onClick={() => triggerSync(true)}
+            onClick={handleDownloadSqlClick}
+            disabled={downloadingSql}
+            title={tr(
+              'Download updated MySQL (.sql) file with latest Admin changes',
+              'সর্বশেষ অ্যাডমিন পরিবর্তনসহ আপডেটেড MySQL (.sql) ফাইল ডাউনলোড করুন'
+            )}
+            className="h-8 px-2.5 rounded-lg border border-[var(--border-subtle)] bg-white hover:bg-[#f0f6f2] text-slate-700 hover:text-[#047857] font-semibold inline-flex items-center gap-1.5 transition disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5 text-[#047857]" strokeWidth={1.75} />
+            <span>{downloadingSql ? tr('Exporting...', 'তৈরি হচ্ছে...') : tr('Download SQL', 'SQL ডাউনলোড')}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSyncClick}
             disabled={syncStatus === 'syncing'}
             className="h-8 px-3 rounded-lg border border-[var(--border-subtle)] bg-[#f7faf8] hover:bg-[#d1fae5]/45 text-[#047857] font-semibold inline-flex items-center gap-1.5 transition disabled:opacity-50"
           >
@@ -513,4 +575,6 @@ export default function OfflineSyncBar() {
       )}
     </>
   );
-}
+});
+
+export default OfflineSyncBar;

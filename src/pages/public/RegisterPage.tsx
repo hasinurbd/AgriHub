@@ -5,7 +5,9 @@ import {
   Truck,
   ShoppingBag,
   AlertTriangle,
-  UserPlus
+  UserPlus,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -19,6 +21,7 @@ export default function RegisterPage() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [phone, setPhone] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [taxNid, setTaxNid] = useState('');
@@ -178,15 +181,29 @@ export default function RegisterPage() {
               <label htmlFor="reg-password" className="block text-slate-800 font-bold mb-1.5">
                 {tr('Password', 'পাসওয়ার্ড')}
               </label>
-              <input
-                id="reg-password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={tr('At least 6 characters', 'কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড')}
-                className="agri-input"
-              />
+              <div className="relative">
+                <input
+                  id="reg-password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={tr('At least 6 characters', 'কমপক্ষে ৬ অক্ষরের পাসওয়ার্ড')}
+                  className="agri-input pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? tr('Hide password', 'পাসওয়ার্ড লুকান') : tr('Show password', 'পাসওয়ার্ড দেখুন')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#047857] focus:outline-none"
+                >
+                  {showPassword ? (
+                    <EyeOff className="w-4 h-4" strokeWidth={1.75} />
+                  ) : (
+                    <Eye className="w-4 h-4" strokeWidth={1.75} />
+                  )}
+                </button>
+              </div>
             </div>
             <div>
               <label htmlFor="reg-phone" className="block text-slate-800 font-bold mb-1.5">

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useEffect, useMemo } from 'react';
+import React, { Suspense, lazy, useCallback, useDeferredValue, useState, useEffect, useMemo, useRef } from 'react';
 import {
   Sprout,
   Truck,
@@ -31,6 +31,7 @@ import {
   Droplets,
   Carrot,
   Eye,
+  EyeOff,
   Check,
   Copy,
   Users,
@@ -45,6 +46,7 @@ import {
   Settings,
   Warehouse,
   Download,
+  FileSpreadsheet,
   FileText,
   FileDown,
   KeyRound,
@@ -66,11 +68,15 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useCart } from '../../context/CartContext';
 import OfflineSyncBar from '../../components/admin/OfflineSyncBar';
 import ProductImageDropzone from '../../components/admin/ProductImageDropzone';
-import {
-  CategoryDoughnutChart,
-  CategoryStockBarChart,
-  ReportsTradeBarChart
-} from '../../components/admin/AdminCharts';
+const CategoryDoughnutChart = lazy(() =>
+  import('../../components/admin/AdminCharts').then((m) => ({ default: m.CategoryDoughnutChart }))
+);
+const CategoryStockBarChart = lazy(() =>
+  import('../../components/admin/AdminCharts').then((m) => ({ default: m.CategoryStockBarChart }))
+);
+const ReportsTradeBarChart = lazy(() =>
+  import('../../components/admin/AdminCharts').then((m) => ({ default: m.ReportsTradeBarChart }))
+);
 const DocsAdminWorkspace = lazy(() => import('../../components/docs/DocsAdminWorkspace'));
 const DocsProvider = lazy(() =>
   import('../../context/DocsContext').then((m) => ({ default: m.DocsProvider }))
@@ -98,11 +104,6 @@ import {
   buildInvoiceFromOrder,
   normalizeApiOrderToOrderItem
 } from '../../utils/invoiceGenerator';
-import {
-  downloadInvoicePdf,
-  downloadOrderSummaryPdf,
-  downloadAdminOrdersReportPdf
-} from '../../utils/pdfExport';
 import coldchainShowcaseImg from '../../assets/images/agrihub_coldchain_showcase_1794487417226.jpg';
 import {
   ProductItem,
@@ -288,6 +289,7 @@ export default function AdminPanel() {
   const {
     isBackendReachable,
     lastSyncedAt,
+    triggerSync,
     saveProductOfflineFirst,
     deleteProductOfflineFirst,
     saveCategoryOfflineFirst,
@@ -357,6 +359,8 @@ export default function AdminPanel() {
   const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [loginEmail, setLoginEmail] = useState<string>('admin@agrihub.com');
   const [loginPassword, setLoginPassword] = useState<string>('');
+  const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
+  const [showNewUserPassword, setShowNewUserPassword] = useState<boolean>(false);
   const [loginLoading, setLoginLoading] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string>('');
 
@@ -495,11 +499,19 @@ export default function AdminPanel() {
 
   // Toast Notice
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ type, message });
-    setTimeout(() => setToast(null), 4500);
-  };
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 4500);
+  }, []);
 
   useEffect(() => {
     setCurrentUser(authUser);
@@ -545,9 +557,7 @@ export default function AdminPanel() {
     setSelectedShipment((prev) =>
       prev ? dbShips.find((s) => s.id === prev.id) || dbShips[0] || null : dbShips[0] || null
     );
-    if (dbWarehouses.length > 0) {
-      setWarehouses(dbWarehouses);
-    }
+    setWarehouses(dbWarehouses);
 
     if (!preserveExistingStats) {
       setAdminStats(
@@ -600,6 +610,21 @@ export default function AdminPanel() {
       return additions.length > 0 ? [...additions, ...prev] : prev;
     });
   }, [localOrders]);
+
+  // Keep local KPIs & chart totals up-to-date when operating without a live MySQL backend
+  useEffect(() => {
+    if (!backendConnected) {
+      setAdminStats(
+        buildLocalAdminStats({
+          users,
+          products,
+          categories,
+          orders,
+          shipments
+        })
+      );
+    }
+  }, [backendConnected, users, products, categories, orders, shipments]);
 
   const checkConnectionAndLoad = async () => {
     setLoadingData(true);
@@ -793,6 +818,18 @@ export default function AdminPanel() {
         setShowLoginModal(false);
         showToast(`Welcome back, ${user.full_name}`);
         await checkConnectionAndLoad();
+        if (!user.is_demo && hasConfiguredBackend()) {
+          const syncSummary = await triggerSync(true);
+          if (syncSummary.synced > 0) {
+            await loadFromIndexedDb(true);
+            showToast(
+              tr(
+                `Synced ${syncSummary.synced} local change(s) to database.`,
+                `${syncSummary.synced}টি লোকাল পরিবর্তন ডাটাবেজে সিঙ্ক হয়েছে।`
+              )
+            );
+          }
+        }
       } else {
         setLoginError('Invalid administrator credentials.');
       }
@@ -804,10 +841,15 @@ export default function AdminPanel() {
   };
 
   const handleLogout = async () => {
+    try {
+      sessionStorage.setItem('agrihub_admin_signed_out', '1');
+    } catch {
+      // Ignore storage issues
+    }
     await authLogout();
     setCurrentUser(null);
     showToast('Signed out of session', 'info');
-    navigate('/login');
+    navigate('/admin/login');
   };
 
   // Category CRUD Handlers
@@ -1151,7 +1193,7 @@ export default function AdminPanel() {
         deliveryZone: 'dhaka'
       });
 
-      if (backendConnected) {
+      if (backendConnected && !currentUser?.is_demo) {
         const res = await AgriHubApi.createOrder({
           items: [{ product_id: product.id, quantity: requestedQty }],
           delivery_address: 'FreshBasket Central Depot, Sector 4, Tejgaon, Dhaka',
@@ -1162,21 +1204,22 @@ export default function AdminPanel() {
           checkConnectionAndLoad();
         }
       } else {
-        const updatedProds = products.map(p => {
-          if (p.id === product.id) {
-            const nextQty = Math.max(0, (p.quantityAvailable || 0) - requestedQty);
-            return {
-              ...p,
-              quantityAvailable: nextQty,
-              status: (nextQty <= 0 ? 'out_of_stock' : nextQty <= 100 ? 'low_stock' : 'active') as any
-            };
-          }
-          return p;
-        });
-        setProducts(updatedProds);
+        const nextQty = Math.max(0, (product.quantityAvailable || 0) - requestedQty);
+        const nextStatus = (nextQty <= 0 ? 'out_of_stock' : nextQty <= 100 ? 'low_stock' : 'active') as ProductItem['status'];
+        const nowIso = new Date().toISOString();
+
+        const existingProd = await offlineDb.products.get(product.id);
+        if (existingProd) {
+          await offlineDb.products.update(product.id, {
+            quantityAvailable: nextQty,
+            status: nextStatus,
+            syncStatus: 'pending',
+            localUpdatedAt: nowIso
+          });
+        }
 
         const orderNumber = `AGRI-ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-        const newOrder: OrderItem = {
+        const newOrder: OfflineOrder = {
           id: Date.now(),
           invoiceNumber: `INV-${orderNumber.replace(/[^0-9A-Z]/gi, '').slice(-8)}`,
           orderNumber,
@@ -1207,10 +1250,13 @@ export default function AdminPanel() {
           orderStatus: 'placed',
           deliveryAddress: 'FreshBasket Central Depot, Sector 4, Tejgaon, Dhaka',
           notes: 'Cold-chain handling required',
-          createdAt: new Date().toISOString().replace('T', ' ').slice(0, 16)
+          createdAt: nowIso.replace('T', ' ').slice(0, 16),
+          syncStatus: 'pending',
+          localUpdatedAt: nowIso
         };
+        await offlineDb.orders.put(newOrder);
         recordOrder(newOrder);
-        setOrders(prev => [newOrder, ...prev]);
+        await loadFromIndexedDb(false);
         showToast(`Order ${newOrder.orderNumber} initiated (${formatCurrency(newOrder.totalAmount, language)}).`);
       }
     } catch (err: any) {
@@ -1249,6 +1295,7 @@ export default function AdminPanel() {
   const handleDownloadOrderPdf = async (order: OrderItem, mode: 'invoice' | 'summary') => {
     try {
       const invoice = buildInvoiceFromOrder(order);
+      const { downloadInvoicePdf, downloadOrderSummaryPdf } = await import('../../utils/pdfExport');
       if (mode === 'invoice') {
         await downloadInvoicePdf(invoice, language);
       } else {
@@ -1264,8 +1311,29 @@ export default function AdminPanel() {
     }
   };
 
+  const [exportingCsv, setExportingCsv] = useState(false);
+
+  const handleExportDashboardCsv = async () => {
+    setExportingCsv(true);
+    try {
+      const { downloadSqlStateCsvFile } = await import('../../utils/csvExport');
+      const res = await downloadSqlStateCsvFile(localOrders);
+      showToast(
+        tr(
+          `Exported ${res.filename} (${res.totalRows} rows: ${res.counts.products} products, ${res.counts.orders} orders, ${res.counts.users} users).`,
+          `${res.filename} ডাউনলোড হয়েছে (${res.totalRows}টি সারি: ${res.counts.products} পণ্য, ${res.counts.orders} অর্ডার)।`
+        )
+      );
+    } catch (err: any) {
+      showToast(err?.message || tr('Could not export CSV.', 'CSV তৈরি করা যায়নি।'), 'error');
+    } finally {
+      setExportingCsv(false);
+    }
+  };
+
   const handleDownloadOrdersReportPdf = async () => {
     try {
+      const { downloadAdminOrdersReportPdf } = await import('../../utils/pdfExport');
       await downloadAdminOrdersReportPdf(orders, language);
       showToast(tr('Trade Orders Report PDF downloaded.', 'ট্রেড অর্ডার রিপোর্ট PDF ডাউনলোড হয়েছে।'));
     } catch (err: any) {
@@ -1621,11 +1689,17 @@ export default function AdminPanel() {
     setTimeout(() => setCopiedText(null), 2000);
   };
 
-  const gq = globalSearch.toLowerCase().trim();
+  const deferredGlobalSearch = useDeferredValue(globalSearch);
+  const deferredCategorySearch = useDeferredValue(categorySearch);
+  const deferredProductSearch = useDeferredValue(productSearch);
+  const deferredUserSearch = useDeferredValue(userSearch);
+  const deferredWarehouseSearch = useDeferredValue(warehouseSearch);
+
+  const gq = deferredGlobalSearch.toLowerCase().trim();
 
   // Filtered Categories
   const filteredCategories = useMemo(() => {
-    const q = (categorySearch || gq).toLowerCase().trim();
+    const q = (deferredCategorySearch || gq).toLowerCase().trim();
     return categories.filter(c => {
       const matchSearch =
         q === '' ||
@@ -1640,11 +1714,11 @@ export default function AdminPanel() {
 
       return matchSearch && matchUsage;
     });
-  }, [categories, categorySearch, categoryUsageFilter, gq]);
+  }, [categories, deferredCategorySearch, categoryUsageFilter, gq]);
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
-    const q = (productSearch || gq).toLowerCase().trim();
+    const q = (deferredProductSearch || gq).toLowerCase().trim();
     return products.filter(p => {
       const matchSearch =
         q === '' ||
@@ -1659,7 +1733,7 @@ export default function AdminPanel() {
 
       return matchSearch && matchCat && matchOrganic && matchStatus;
     });
-  }, [products, productSearch, selectedCategoryFilter, organicOnly, statusFilter, gq]);
+  }, [products, deferredProductSearch, selectedCategoryFilter, organicOnly, statusFilter, gq]);
 
   const producerOptions = useMemo(() => {
     const list = users.filter(u => u.role === 'farmer' || u.role === 'admin');
@@ -1694,7 +1768,7 @@ export default function AdminPanel() {
   const filteredUsers = useMemo(() => {
     const effectiveRole: RoleFilter =
       activeView === 'farmers' ? 'farmer' : activeView === 'buyers' ? 'buyer' : userRoleFilter;
-    const q = (userSearch || gq).toLowerCase().trim();
+    const q = (deferredUserSearch || gq).toLowerCase().trim();
     return users.filter(u => {
       const matchRole = effectiveRole === 'all' || u.role === effectiveRole;
       const matchSearch =
@@ -1704,17 +1778,17 @@ export default function AdminPanel() {
         (u.business_name || '').toLowerCase().includes(q);
       return matchRole && matchSearch;
     });
-  }, [users, userRoleFilter, userSearch, activeView, gq]);
+  }, [users, userRoleFilter, deferredUserSearch, activeView, gq]);
 
   const filteredWarehouses = useMemo(() => {
-    const q = (warehouseSearch || gq).toLowerCase().trim();
+    const q = (deferredWarehouseSearch || gq).toLowerCase().trim();
     return warehouses.filter(w =>
       q === '' ||
       w.name.toLowerCase().includes(q) ||
       w.code.toLowerCase().includes(q) ||
       w.region.toLowerCase().includes(q)
     );
-  }, [warehouses, warehouseSearch, gq]);
+  }, [warehouses, deferredWarehouseSearch, gq]);
 
   const inTransitCount = adminStats?.logistics?.active_shipments ?? shipments.filter(s => s.status === 'in_transit' || s.status === 'dispatched').length;
 
@@ -2369,8 +2443,24 @@ export default function AdminPanel() {
 
           {/* MAIN CONTENT CONTAINER */}
           <main className="flex-1 p-4 lg:p-6 max-w-7xl w-full mx-auto space-y-6">
-            {/* Offline-First Sync Status Bar, Queue Monitor & Conflict Resolver */}
-            <OfflineSyncBar />
+            {/* Sync Status Bar, Queue Monitor & Updated SQL Export */}
+            <OfflineSyncBar
+              extraOrders={localOrders}
+              onRequestServerLogin={() => {
+                setLoginEmail('admin@agrihub.local');
+                setLoginPassword('');
+                setLoginError('');
+                setShowLoginModal(true);
+              }}
+              onSqlDownloaded={(res) => {
+                showToast(
+                  tr(
+                    `Downloaded ${res.filename} (${res.counts.products} products, ${res.counts.orders} orders).`,
+                    `${res.filename} ডাউনলোড হয়েছে (${res.counts.products}টি পণ্য, ${res.counts.orders}টি অর্ডার)।`
+                  )
+                );
+              }}
+            />
 
             {/* ================= VIEW 1: EXECUTIVE DASHBOARD ================= */}
             {activeView === 'dashboard' && (
@@ -2385,14 +2475,34 @@ export default function AdminPanel() {
                       {tr('Real-time platform metrics across users, inventory, orders, and logistics', 'ব্যবহারকারী, মজুদ, অর্ডার ও পরিবহনের রিয়েল-টাইম তথ্য')}
                     </p>
                   </div>
-                  <button
-                    onClick={checkConnectionAndLoad}
-                    disabled={loadingData}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-emerald-900/60 bg-white dark:bg-[#101c16] hover:bg-slate-50 dark:hover:bg-[#13221a] text-xs font-semibold text-slate-700 dark:text-slate-200 transition disabled:opacity-60"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 ${loadingData ? 'animate-spin' : ''}`} />
-                    <span>{loadingData ? tr('Syncing...', 'সিঙ্ক হচ্ছে...') : tr('Refresh Stats', 'রিফ্রেশ')}</span>
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExportDashboardCsv}
+                      disabled={exportingCsv}
+                      title={tr(
+                        'Export current SQL state & data grid to CSV (works in local mode)',
+                        'বর্তমান SQL ডাটা ও গ্রিড CSV হিসেবে ডাউনলোড করুন'
+                      )}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-xs font-semibold text-emerald-800 dark:text-emerald-300 transition disabled:opacity-60"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400" />
+                      <span>
+                        {exportingCsv
+                          ? tr('Exporting CSV...', 'তৈরি হচ্ছে...')
+                          : tr('Export Data CSV', 'CSV এক্সপোর্ট')}
+                      </span>
+                    </button>
+
+                    <button
+                      onClick={checkConnectionAndLoad}
+                      disabled={loadingData}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-emerald-900/60 bg-white dark:bg-[#101c16] hover:bg-slate-50 dark:hover:bg-[#13221a] text-xs font-semibold text-slate-700 dark:text-slate-200 transition disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 ${loadingData ? 'animate-spin' : ''}`} />
+                      <span>{loadingData ? tr('Syncing...', 'সিঙ্ক হচ্ছে...') : tr('Refresh Stats', 'রিফ্রেশ')}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {dashboardError && (
@@ -2650,11 +2760,13 @@ export default function AdminPanel() {
                         </div>
                       ) : (
                         <>
-                          <CategoryDoughnutChart
-                            segments={categoryBreakdown}
-                            totalProducts={totalCategoryProducts}
-                            centerLabel={tr('Active Batches', 'সক্রিয় ব্যাচ')}
-                          />
+                          <Suspense fallback={<div className="w-44 h-44 mx-auto my-4 rounded-full bg-slate-100 animate-pulse" />}>
+                            <CategoryDoughnutChart
+                              segments={categoryBreakdown}
+                              totalProducts={totalCategoryProducts}
+                              centerLabel={tr('Active Batches', 'সক্রিয় ব্যাচ')}
+                            />
+                          </Suspense>
 
                           <div className="space-y-2 text-xs">
                             {categoryBreakdown.map(c => (
@@ -3329,7 +3441,7 @@ export default function AdminPanel() {
                           </tr>
                         ) : (
                           filteredOrders.map(o => (
-                            <tr key={o.id} className="hover:bg-slate-50/60 dark:hover:bg-[#13221a]/60 transition">
+                            <tr key={`${o.orderNumber}-${o.id}`} className="hover:bg-slate-50/60 dark:hover:bg-[#13221a]/60 transition">
                               <td className="py-3.5 px-4 font-mono font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                                 {o.orderNumber}
                               </td>
@@ -3948,7 +4060,9 @@ export default function AdminPanel() {
                         {tr('Live order volume and GMV across workflow stages', 'অর্ডার ধাপ অনুযায়ী মোট মূল্য ও সংখ্যা')}
                       </p>
                     </div>
-                    <ReportsTradeBarChart orders={orders} />
+                    <Suspense fallback={<div className="h-64 w-full rounded-xl bg-slate-100 animate-pulse" />}>
+                      <ReportsTradeBarChart orders={orders} />
+                    </Suspense>
                   </div>
 
                   <div className="bg-white dark:bg-[#101c16] border border-slate-200/80 dark:border-emerald-900/50 rounded-xl p-5 shadow-2xs space-y-3">
@@ -3960,7 +4074,9 @@ export default function AdminPanel() {
                         {tr('Real-time available quantity and catalog value', 'সক্রিয় ব্যাচের মোট পরিমাণ ও বাজারমূল্য')}
                       </p>
                     </div>
-                    <CategoryStockBarChart products={products} />
+                    <Suspense fallback={<div className="h-64 w-full rounded-xl bg-slate-100 animate-pulse" />}>
+                      <CategoryStockBarChart products={products} />
+                    </Suspense>
                   </div>
                 </div>
 
@@ -4154,6 +4270,24 @@ export default function AdminPanel() {
                         className="px-3.5 py-2 border border-slate-200 dark:border-emerald-900/60 bg-slate-50 dark:bg-[#0b1510] hover:bg-slate-100 dark:hover:bg-[#13221a] text-slate-700 dark:text-slate-200 font-semibold rounded-lg transition"
                       >
                         {tr('Reset Default', 'ডিফল্ট রিসেট')}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const { downloadUpdatedSqlFile } = await import('../../utils/sqlExport');
+                          const res = await downloadUpdatedSqlFile(localOrders);
+                          showToast(
+                            tr(
+                              `Downloaded ${res.filename} (${res.counts.products} products, ${res.counts.orders} orders).`,
+                              `${res.filename} ডাউনলোড হয়েছে (${res.counts.products}টি পণ্য, ${res.counts.orders}টি অর্ডার)।`
+                            )
+                          );
+                        }}
+                        className="px-3.5 py-2 border border-emerald-200 dark:border-emerald-800/70 bg-emerald-50 dark:bg-emerald-950/60 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-semibold rounded-lg transition inline-flex items-center gap-1.5"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>{tr('Download Updated SQL', 'আপডেটেড SQL ডাউনলোড')}</span>
                       </button>
                     </div>
                   </div>
@@ -4746,13 +4880,23 @@ export default function AdminPanel() {
                   </div>
                   <div>
                     <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Password</label>
-                    <input
-                      type="password"
-                      required
-                      value={loginPassword}
-                      onChange={e => setLoginPassword(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-600 focus:bg-white dark:focus:bg-slate-800"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showLoginPassword ? 'text' : 'password'}
+                        required
+                        value={loginPassword}
+                        onChange={e => setLoginPassword(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 pr-9 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-emerald-600 focus:bg-white dark:focus:bg-slate-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowLoginPassword(prev => !prev)}
+                        aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-emerald-700 dark:hover:text-emerald-400 focus:outline-none"
+                      >
+                        {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between text-[11px] pt-1">
@@ -4827,6 +4971,8 @@ export default function AdminPanel() {
                 src={coldchainShowcaseImg}
                 alt="AgriHub Harvest Storage and Cold-Chain Transport"
                 referrerPolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover opacity-90"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/30 to-transparent" />
@@ -5107,13 +5253,23 @@ export default function AdminPanel() {
                   </div>
                   <div>
                     <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Password *</label>
-                    <input
-                      type="password"
-                      required
-                      value={uPassword}
-                      onChange={e => setUPassword(e.target.value)}
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-600"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showNewUserPassword ? 'text' : 'password'}
+                        required
+                        value={uPassword}
+                        onChange={e => setUPassword(e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2 pr-9 focus:outline-none focus:border-emerald-600"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewUserPassword(prev => !prev)}
+                        aria-label={showNewUserPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-emerald-700 dark:hover:text-emerald-400 focus:outline-none"
+                      >
+                        {showNewUserPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

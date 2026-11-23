@@ -8,7 +8,9 @@ import {
   Truck,
   ShoppingBag,
   Mail,
-  Lock
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -21,6 +23,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -131,13 +134,25 @@ export default function LoginPage() {
                   />
                   <input
                     id="login-password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="agri-input pl-9"
+                    className="agri-input pl-9 pr-10"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? tr('Hide password', 'পাসওয়ার্ড লুকান') : tr('Show password', 'পাসওয়ার্ড দেখুন')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#047857] focus:outline-none"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" strokeWidth={1.75} />
+                    ) : (
+                      <Eye className="w-4 h-4" strokeWidth={1.75} />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -212,10 +227,19 @@ export default function LoginPage() {
               </button>
             </div>
 
-            <div className="mt-4 text-center">
-              <span className="text-slate-500">{tr('New to AgriHub?', 'অ্যাগ্রিহাবে নতুন?')} </span>
-              <Link to="/register" className="text-[#047857] font-bold hover:underline">
-                {tr('Create an Account', 'নতুন অ্যাকাউন্ট খুলুন')}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-center">
+              <div>
+                <span className="text-slate-500">{tr('New to AgriHub?', 'অ্যাগ্রিহাবে নতুন?')} </span>
+                <Link to="/register" className="text-[#047857] font-bold hover:underline">
+                  {tr('Create an Account', 'নতুন অ্যাকাউন্ট খুলুন')}
+                </Link>
+              </div>
+              <Link
+                to="/admin/dashboard"
+                className="text-[11px] font-bold text-[#047857] hover:underline inline-flex items-center gap-1"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" strokeWidth={1.75} />
+                <span>{tr('Admin Console', 'অ্যাডমিন কনসোল')}</span>
               </Link>
             </div>
           </div>

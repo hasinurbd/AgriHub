@@ -374,7 +374,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
         action: `WAREHOUSE_${operation.toUpperCase()}`,
         entityType: 'warehouse',
         entityId: targetId,
-        message: `Saved warehouse "${record.name}" (${record.code}) to IndexedDB.`
+        message: `Saved warehouse "${record.name}" (${record.code}) locally.`
       });
       await refreshSyncState();
       return record;
@@ -391,7 +391,7 @@ export function OfflineSyncProvider({ children }: { children: React.ReactNode })
         action: 'WAREHOUSE_DELETED',
         entityType: 'warehouse',
         entityId: warehouse.id,
-        message: `Removed warehouse "${warehouse.name}" from IndexedDB.`
+        message: `Removed warehouse "${warehouse.name}" from local storage.`
       });
       await refreshSyncState();
     },

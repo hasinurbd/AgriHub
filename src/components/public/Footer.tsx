@@ -231,6 +231,12 @@ export default function Footer() {
               </Link>
             </li>
             <li>
+              <Link to="/admin/dashboard" className="hover:text-[#047857] dark:hover:text-[#10b981] transition inline-flex items-center gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#047857] dark:text-[#10b981]" strokeWidth={1.75} />
+                <span>{tr('Admin Console', 'অ্যাডমিন কনসোল')}</span>
+              </Link>
+            </li>
+            <li>
               <Link to="/contact" className="hover:text-[#047857] transition inline-flex items-center gap-2">
                 <Mail className="w-3.5 h-3.5 text-[#047857]" strokeWidth={1.75} />
                 <span>{tr('Trade Partnership Inquiry', 'পার্টনারশিপ যোগাযোগ')}</span>

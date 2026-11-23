@@ -39,7 +39,8 @@ import {
   ShoppingCart,
   Workflow
 } from 'lucide-react';
-import { AgriHubApi } from '../../api';
+import { AgriHubApi, hasConfiguredBackend } from '../../api';
+import { ensureOfflineDbSeeded, offlineDb } from '../../lib/offlineDb';
 import {
   INITIAL_PRODUCTS,
   INITIAL_CATEGORIES,
@@ -177,6 +178,37 @@ export default function HomePage({ targetSection }: HomePageProps = {}) {
 
   const loadData = async () => {
     try {
+      await ensureOfflineDbSeeded();
+      const [dbProds, dbCats] = await Promise.all([
+        offlineDb.products.toArray(),
+        offlineDb.categories.toArray()
+      ]);
+
+      if (dbProds.length > 0) {
+        const sortedProds = [...dbProds].sort((a, b) => Number(b.id) - Number(a.id));
+        setProducts(sortedProds);
+
+        if (dbCats.length > 0) {
+          setCategories(
+            dbCats.map((c) => {
+              const count = sortedProds.filter(
+                (p) =>
+                  p.status !== 'archived' &&
+                  (Number(p.category_id) === Number(c.id) ||
+                    p.category.toLowerCase() === c.name.toLowerCase())
+              ).length;
+              return { ...c, skuCount: count > 0 ? count : c.skuCount };
+            })
+          );
+        }
+      } else if (dbCats.length > 0) {
+        setCategories(dbCats);
+      }
+
+      if (!hasConfiguredBackend()) {
+        return;
+      }
+
       const [prodsRes, catsRes] = await Promise.allSettled([
         AgriHubApi.getProducts(),
         AgriHubApi.getCategories()
@@ -450,6 +482,8 @@ export default function HomePage({ targetSection }: HomePageProps = {}) {
                       'বাংলাদেশের কৃষকরা তাজা ফসল পরিদর্শন করছেন এবং কোল্ড-চেইন পরিবহন প্রস্তুত রয়েছে'
                     )}
                     referrerPolicy="no-referrer"
+                    decoding="async"
+                    fetchPriority="high"
                     onError={() => setHeroImgError(true)}
                     className="w-full h-[380px] sm:h-[440px] object-cover transition-transform duration-700 group-hover:scale-[1.03]"
                   />
@@ -665,6 +699,8 @@ export default function HomePage({ targetSection }: HomePageProps = {}) {
                   src={activeStageObj.image}
                   alt={activeStageObj.imageCaption}
                   referrerPolicy="no-referrer"
+                  loading="lazy"
+                  decoding="async"
                   onError={() => setStageImgError(true)}
                   className="w-full h-72 sm:h-80 object-cover"
                 />

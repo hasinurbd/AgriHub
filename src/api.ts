@@ -1,7 +1,7 @@
 /**
  * AgriHub Frontend API Client
  * Connects React frontend to the configurable PHP/MySQL backend API
- * (supports local development, Vercel + Render/Railway/Hostinger, and Offline-First Sandbox)
+ * (supports local development, all static/cloud hosts, and Local-First mode)
  */
 
 const STORAGE_KEY_API_BASE = 'agrihub_api_base';
@@ -27,17 +27,16 @@ const isLocalBrowserHost =
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-function isBlockedLoopbackOnRemoteHttps(url: string): boolean {
+function isBlockedLoopbackOnRemoteHost(url: string): boolean {
   if (!url || typeof window === 'undefined') return false;
   return (
-    window.location.protocol === 'https:' &&
     !isLocalBrowserHost &&
-    /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(url)
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(url)
   );
 }
 
 const DEFAULT_API_BASE =
-  envApiBase && !isBlockedLoopbackOnRemoteHttps(envApiBase)
+  envApiBase && !isBlockedLoopbackOnRemoteHost(envApiBase)
     ? envApiBase
     : import.meta.env.DEV && isLocalBrowserHost
     ? 'http://localhost/agrihub/api'
@@ -51,7 +50,7 @@ export function getApiBaseUrl(): string {
   try {
     const current = normalizeApiBase(localStorage.getItem(STORAGE_KEY_API_BASE));
     if (current) {
-      if (isBlockedLoopbackOnRemoteHttps(current)) {
+      if (isBlockedLoopbackOnRemoteHost(current)) {
         localStorage.removeItem(STORAGE_KEY_API_BASE);
       } else {
         return current;
@@ -61,7 +60,7 @@ export function getApiBaseUrl(): string {
     const legacy = normalizeApiBase(localStorage.getItem(LEGACY_STORAGE_KEY_API_URL));
     if (legacy) {
       localStorage.removeItem(LEGACY_STORAGE_KEY_API_URL);
-      if (!isBlockedLoopbackOnRemoteHttps(legacy) && !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(legacy)) {
+      if (!isBlockedLoopbackOnRemoteHost(legacy) && !/^http:\/\/(localhost|127\.0\.0\.1)/i.test(legacy)) {
         localStorage.setItem(STORAGE_KEY_API_BASE, legacy);
         return legacy;
       }
@@ -76,7 +75,7 @@ export function setApiBaseUrl(url: string): void {
   const cleaned = normalizeApiBase(url);
   try {
     localStorage.removeItem(LEGACY_STORAGE_KEY_API_URL);
-    if (!cleaned || isBlockedLoopbackOnRemoteHttps(cleaned)) {
+    if (!cleaned || isBlockedLoopbackOnRemoteHost(cleaned)) {
       localStorage.removeItem(STORAGE_KEY_API_BASE);
       return;
     }
@@ -224,7 +223,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   const base = getApiBaseUrl();
   if (!base) {
     throw new ApiError(
-      'Backend API URL is not configured. Operating in Offline-First Sandbox mode.',
+      'Backend API URL is not configured. Operating in local mode.',
       { isNetworkError: true, isHttpError: false }
     );
   }
@@ -270,7 +269,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 
     const networkMessage = isHttpsToLocalHttp
       ? `Blocked mixed-content request to ${base} from HTTPS origin (${window.location.origin}). Configure an HTTPS backend URL via VITE_API_BASE_URL or NEXT_PUBLIC_API_URL.`
-      : `Cannot reach backend API at ${base}. Operating in Offline-First mode.`;
+      : `Cannot reach backend API at ${base}. Operating in local mode.`;
 
     throw new ApiError(networkMessage, { isNetworkError: true, isHttpError: false });
   } finally {
@@ -314,7 +313,7 @@ export const AgriHubApi = {
   // Health & Session Reachability Check
   async checkConnection(): Promise<{ connected: boolean; message: string; version?: string }> {
     if (!hasConfiguredBackend()) {
-      return { connected: false, message: 'Offline-First Demo Mode (No API URL configured)' };
+      return { connected: false, message: 'Local mode active (no API URL configured)' };
     }
     try {
       await apiFetch<any>('/auth/me.php', { method: 'GET' });

@@ -23,6 +23,7 @@ export interface SyncRunSummary {
   failed: number;
   conflicts: number;
   skippedOffline: boolean;
+  awaitingAuth?: boolean;
   message: string;
 }
 
@@ -31,9 +32,12 @@ function createIdempotencyKey(entityType: SyncEntityType, operation: SyncOperati
   return `agrihub_${entityType}_${operation}_${entityId}_${Date.now()}_${rand}`;
 }
 
+let tempIdSeq = 0;
+
 export function generateTempId(): number {
   // Negative IDs unambiguously identify records created offline prior to server assignment
-  return -Math.floor(Date.now() % 1000000000);
+  tempIdSeq = (tempIdSeq + 1) % 1000;
+  return -(Math.floor((Date.now() % 1000000) * 1000) + tempIdSeq);
 }
 
 /**
@@ -459,16 +463,16 @@ export async function runSyncCycle(forceAttempt = false): Promise<SyncRunSummary
         failed: 0,
         conflicts: 0,
         skippedOffline: true,
-        message: 'Browser is offline. Changes remain safely queued in IndexedDB.'
+        message: 'Browser is offline. Changes remain safely saved locally.'
       };
     }
 
     if (!hasConfiguredBackend()) {
       await addSyncLog({
         level: 'info',
-        action: 'SYNC_DEFERRED_SANDBOX',
+        action: 'SYNC_DEFERRED_LOCAL',
         entityType: 'system',
-        message: `${pendingItems.length} offline mutation(s) stored in IndexedDB (Demo Mode — no external PHP API configured).`
+        message: `${pendingItems.length} local change(s) queued (no external PHP API configured).`
       });
       return {
         attempted: 0,
@@ -476,7 +480,7 @@ export async function runSyncCycle(forceAttempt = false): Promise<SyncRunSummary
         failed: 0,
         conflicts: 0,
         skippedOffline: true,
-        message: 'Operating in Vercel Offline-First Sandbox (no external PHP API configured).'
+        message: 'Operating in local mode (no external PHP API configured).'
       };
     }
 
@@ -492,6 +496,48 @@ export async function runSyncCycle(forceAttempt = false): Promise<SyncRunSummary
           message: conn.message
         };
       }
+    }
+
+    // Ensure an authenticated PHP server session exists before flushing queued mutations
+    try {
+      const meRes = await AgriHubApi.getMe();
+      if (!meRes?.success || !meRes?.data) {
+        return {
+          attempted: 0,
+          synced: 0,
+          failed: 0,
+          conflicts: 0,
+          skippedOffline: true,
+          awaitingAuth: true,
+          message: 'Server is online — sign in with server admin credentials to sync.'
+        };
+      }
+    } catch (authErr: any) {
+      if (authErr instanceof ApiError && (authErr.status === 401 || authErr.status === 403)) {
+        await addSyncLog({
+          level: 'info',
+          action: 'SYNC_AWAITING_AUTH',
+          entityType: 'system',
+          message: `${pendingItems.length} local change(s) waiting — sign in with server admin credentials to sync.`
+        });
+        return {
+          attempted: 0,
+          synced: 0,
+          failed: 0,
+          conflicts: 0,
+          skippedOffline: true,
+          awaitingAuth: true,
+          message: 'Server is online — sign in with server admin credentials to sync.'
+        };
+      }
+      return {
+        attempted: 0,
+        synced: 0,
+        failed: 0,
+        conflicts: 0,
+        skippedOffline: true,
+        message: authErr?.message || 'Backend server is currently unreachable.'
+      };
     }
 
     let synced = 0;
@@ -600,6 +646,22 @@ export async function runSyncCycle(forceAttempt = false): Promise<SyncRunSummary
             message: `HTTP 409 Conflict for "${item.entityLabel}": ${err.message}`
           });
           continue;
+        }
+
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+          await offlineDb.syncQueue.update(item.id, {
+            status: 'pending',
+            lastError: 'Sign in with server admin credentials to sync.',
+            updatedAt: nowIso
+          });
+          await addSyncLog({
+            level: 'warning',
+            action: 'SYNC_AWAITING_AUTH',
+            entityType: item.entityType,
+            entityId: item.entityId,
+            message: `Paused sync for "${item.entityLabel}": sign in to server admin account.`
+          });
+          break;
         }
 
         const msg = err?.message || 'Sync request failed';

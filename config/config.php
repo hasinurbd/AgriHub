@@ -172,7 +172,10 @@ function isOriginAllowed(string $origin): bool {
     if (in_array($normalized, ALLOWED_CORS_ORIGINS, true)) {
         return true;
     }
-    if (ALLOW_VERCEL_PREVIEW_ORIGINS && preg_match('#^https://[a-z0-9-]+\.vercel\.app$#i', $normalized)) {
+    if (
+        ALLOW_VERCEL_PREVIEW_ORIGINS &&
+        preg_match('#^https://[a-z0-9.-]+\.(vercel\.app|netlify\.app|pages\.dev|onrender\.com|up\.railway\.app|github\.io|web\.app|firebaseapp\.com|surge\.sh)$#i', $normalized)
+    ) {
         return true;
     }
     return false;
