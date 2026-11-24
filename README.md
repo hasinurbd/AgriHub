@@ -1,20 +1,116 @@
+# 🌾 AgriHub – Bangladesh Agricultural Trade Network
+
 <div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+
+![AgriHub](public/favicon.ico)
+
+### Connecting Farmers, Buyers, Logistics, and Markets Across Bangladesh
+
+A modern agriculture marketplace and supply chain platform that enables farmers, cooperatives, buyers, collection centers, and logistics providers to trade agricultural products efficiently through a trusted national network.
+
+[Live Demo](#) • [Documentation](#) • [Report Issues](../../issues)
+
 </div>
 
-# Run and deploy your AI Studio app
+---
 
-This contains everything you need to run your app locally.
+## 📖 Overview
 
-View your app in AI Studio: https://ai.studio/apps/bd583641-3d92-431f-b706-759123a7050b
+AgriHub is a digital agricultural marketplace designed for Bangladesh's farming ecosystem.
 
-## Run Locally
+The platform connects:
 
-**Prerequisites:**  Node.js
+- 👨‍🌾 Farmers
+- 🏢 Buyers
+- 🚚 Logistics Providers
+- 🏬 Collection Centers
+- 🌾 Agricultural Cooperatives
+- 📦 Warehouses
 
+Through a unified marketplace, users can discover products, manage orders, track deliveries, communicate with stakeholders, and access agriculture-focused AI assistance.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+## ✨ Key Features
+
+### 🛒 Smart Marketplace
+
+- Agricultural product listings
+- Category-based browsing
+- Product search and filtering
+- Verified farmer profiles
+- Product verification badges
+- Stock availability indicators
+- Product traceability information
+
+### 🌾 Farmer Network
+
+- Verified farmer registration
+- Cooperative management
+- Product publishing
+- Inventory tracking
+- Buyer communication
+
+### 🚛 Cold-Chain Logistics
+
+- Delivery route tracking
+- Logistics partner integration
+- Shipment monitoring
+- Transport coordination
+- Cold-chain support
+
+### 💰 Secure Transactions
+
+- Order management
+- Checkout system
+- Invoice generation
+- Payment tracking
+- Transaction records
+
+### 🤖 AI Agriculture Assistant
+
+- Farming guidance
+- Marketplace support
+- Product recommendations
+- Order assistance
+- FAQ support
+- Bangla and English support
+
+### 📊 Analytics & Insights
+
+- Marketplace metrics
+- Product performance
+- Order statistics
+- Network growth monitoring
+- Business insights
+
+---
+
+## 🌐 Multilingual Support
+
+### English
+Complete marketplace experience in English.
+
+### বাংলা
+বাংলাদেশি ব্যবহারকারীদের জন্য সম্পূর্ণ বাংলা ইন্টারফেস ও অভিজ্ঞতা।
+
+Supported Features:
+
+- Interface translation
+- Product localization
+- Currency localization
+- AI assistant localization
+- Invoice localization
+
+---
+
+## 💱 Currency Standard
+
+AgriHub uses Bangladeshi Taka (BDT) as the default transaction currency.
+
+### English Mode
+
+```text
+BDT 1,250
+BDT 25,000
+BDT 150,000
