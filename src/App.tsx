@@ -147,7 +147,7 @@ function MainApp() {
         <Routes>
           {/* Admin Authentication & Protected Routes */}
           <Route path="/admin/login" element={<AdminLoginPage />} />
-          <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+          <Route path="/admin" element={<ProtectedAdminRoute />} />
           <Route path="/admin/dashboard" element={<ProtectedAdminRoute />} />
           <Route path="/admin/users" element={<ProtectedAdminRoute />} />
           <Route path="/admin/farmers" element={<ProtectedAdminRoute />} />

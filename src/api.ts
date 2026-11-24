@@ -36,9 +36,9 @@ function isBlockedLoopbackOnRemoteHost(url: string): boolean {
 }
 
 const DEFAULT_API_BASE =
-  envApiBase && !isBlockedLoopbackOnRemoteHost(envApiBase)
+  isLocalBrowserHost && envApiBase && !isBlockedLoopbackOnRemoteHost(envApiBase)
     ? envApiBase
-    : import.meta.env.DEV && isLocalBrowserHost
+    : isLocalBrowserHost && import.meta.env.DEV
     ? 'http://localhost/agrihub/api'
     : '';
 
