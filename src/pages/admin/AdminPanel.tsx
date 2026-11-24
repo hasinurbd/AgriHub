@@ -669,8 +669,11 @@ export default function AdminPanel() {
         const err = statsRes.status === 'rejected' ? statsRes.reason : null;
         if (err?.status === 401) {
           setBackendConnected(true);
-          setBackendMessage('Session expired. Operating with saved local data.');
-          await refreshAuth();
+          setBackendMessage(
+            authUser?.is_demo
+              ? 'Server online — sign in via Sync Bar to sync changes.'
+              : 'Session expired. Operating with saved local data.'
+          );
         } else {
           setBackendConnected(false);
           setBackendMessage(err?.message || 'Operating in local mode');
@@ -1835,7 +1838,7 @@ export default function AdminPanel() {
         alerts.push({
           id: `prod-${p.id}`,
           title: p.status === 'out_of_stock' ? 'Batch Out of Stock' : 'Low Stock Batch',
-          detail: `${p.batchNumber} (${p.title}) — ${p.quantityAvailable.toLocaleString()} ${p.unitType} remaining.`,
+          detail: `${p.batchNumber} (${p.title}) — ${Number(p.quantityAvailable || 0).toLocaleString()} ${p.unitType} remaining.`,
           tone: 'amber'
         });
       });

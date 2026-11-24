@@ -77,8 +77,15 @@ export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farme
         offlineDb.shipments.toArray()
       ]);
 
-      const formattedProds = dbProds
-        .filter((p) => (activeRole === 'farmer' && currentUser?.id ? p.farmer_id === currentUser.id || true : true))
+      const formattedProds = [...dbProds]
+        .sort((a, b) => {
+          if (activeRole === 'farmer' && currentUser?.id) {
+            const aMine = Number(a.farmer_id) === Number(currentUser.id) ? 0 : 1;
+            const bMine = Number(b.farmer_id) === Number(currentUser.id) ? 0 : 1;
+            return aMine - bMine;
+          }
+          return 0;
+        })
         .map((p) => ({
           id: p.id,
           title: p.title,
@@ -140,7 +147,7 @@ export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farme
     } else {
       setLoading(false);
     }
-  }, [currentUser?.id, activeRole]);
+  }, [currentUser?.id, activeRole, backendConnected]);
 
   if (!currentUser) {
     const portalRole = expectedRole || 'buyer';
@@ -732,7 +739,7 @@ export default function RolePortalPage({ expectedRole }: { expectedRole?: 'farme
                   </tr>
                 ) : (
                   mergedOrders.map((o) => (
-                    <tr key={o.id} className="hover:bg-[#f7faf8]">
+                    <tr key={`${o.orderNumber}-${o.id}`} className="hover:bg-[#f7faf8]">
                       <td className="py-3 px-4">
                         <div className="font-mono font-bold text-[#047857]">{o.orderNumber}</div>
                         <div className="text-[11px] text-slate-500">

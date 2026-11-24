@@ -63,32 +63,77 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+function readInitialSessionUser(): any | null {
+  const persisted = readPersistedSession();
+  if (persisted) return persisted;
+  try {
+    const raw = localStorage.getItem('agrihub_demo_session');
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 function loadStoredCart(): CheckoutCartItem[] {
   try {
     const raw = localStorage.getItem(CART_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+    const activeUser = readInitialSessionUser();
+    const snapshot = loadAccountSnapshot(activeUser);
+    if (Array.isArray(snapshot?.cartItems)) {
+      return snapshot.cartItems;
+    }
   } catch {
-    return [];
+    // ignore storage errors
   }
+  return [];
 }
 
 function loadStoredOrders(): OrderItem[] {
   try {
-    const activeSession = readPersistedSession() || localStorage.getItem('agrihub_demo_session');
-    if (!activeSession) return [];
+    const activeUser = readInitialSessionUser();
+    if (!activeUser) return [];
     const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
     }
+    const snapshot = loadAccountSnapshot(activeUser);
+    if (Array.isArray(snapshot?.orders) && snapshot.orders.length > 0) {
+      return snapshot.orders;
+    }
+    return INITIAL_ORDERS;
   } catch {
-    // fallback to seed orders
+    // fallback to seed orders if logged in
   }
-  return INITIAL_ORDERS;
+  return readInitialSessionUser() ? INITIAL_ORDERS : [];
+}
+
+function loadInitialCheckoutField(
+  field: 'customerName' | 'customerEmail' | 'customerPhone' | 'deliveryAddress'
+): string {
+  const activeUser = readInitialSessionUser();
+  if (!activeUser) return '';
+  const snapshot = loadAccountSnapshot(activeUser);
+  const saved = snapshot?.checkoutInfo?.[field];
+  if (typeof saved === 'string' && saved.trim() !== '') {
+    return saved;
+  }
+  switch (field) {
+    case 'customerName':
+      return activeUser.business_name || activeUser.full_name || '';
+    case 'customerEmail':
+      return activeUser.email || '';
+    case 'customerPhone':
+      return activeUser.phone || '+880 1711-000800';
+    case 'deliveryAddress':
+      return activeUser.address || 'FreshBasket Central Distribution Hub, Tejgaon, Dhaka 1215';
+  }
 }
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
@@ -105,17 +150,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('bkash_nagad');
   const [couponInput, setCouponInput] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('+880 1711-000800');
-  const [deliveryAddress, setDeliveryAddress] = useState(
-    'FreshBasket Central Distribution Hub, Tejgaon, Dhaka 1215'
+  const [customerName, setCustomerName] = useState(() => loadInitialCheckoutField('customerName'));
+  const [customerEmail, setCustomerEmail] = useState(() => loadInitialCheckoutField('customerEmail'));
+  const [customerPhone, setCustomerPhone] = useState(() => loadInitialCheckoutField('customerPhone'));
+  const [deliveryAddress, setDeliveryAddress] = useState(() =>
+    loadInitialCheckoutField('deliveryAddress')
   );
   const [orderNotes, setOrderNotes] = useState('Fresh cold-chain delivery requested');
   const [submitting, setSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [cartToast, setCartToast] = useState<string | null>(null);
 
+  const [hydratedAccountKey, setHydratedAccountKey] = useState<string | null>(() =>
+    getAccountVaultKey(currentUser)
+  );
   const prevUserRef = useRef<any | null>(currentUser);
   const prevAccountKeyRef = useRef<string | null>(getAccountVaultKey(currentUser));
   const accountStateRef = useRef({
@@ -136,9 +184,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     deliveryAddress
   };
 
+  const activeAccountKey = getAccountVaultKey(currentUser);
+  const isAccountHydrated = Boolean(currentUser && activeAccountKey && hydratedAccountKey === activeAccountKey);
+
   useEffect(() => {
     try {
       if (currentUser) {
+        if (!isAccountHydrated) return;
         localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
       } else if (cartItems.length > 0) {
         localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartItems));
@@ -148,11 +200,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore storage errors
     }
-  }, [cartItems, currentUser]);
+  }, [cartItems, currentUser, isAccountHydrated]);
 
   useEffect(() => {
     try {
       if (currentUser) {
+        if (!isAccountHydrated) return;
         localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(localOrders));
       } else {
         localStorage.removeItem(ORDERS_STORAGE_KEY);
@@ -160,11 +213,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // ignore storage errors
     }
-  }, [localOrders, currentUser]);
+  }, [localOrders, currentUser, isAccountHydrated]);
 
-  // Continuously keep signed-in user's account vault updated across edits
+  // Continuously keep signed-in user's account vault updated ONLY once hydrated for this account
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !isAccountHydrated) return;
     saveAccountSnapshot(currentUser, {
       cartItems,
       orders: localOrders,
@@ -175,18 +228,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         deliveryAddress
       }
     });
-  }, [currentUser, cartItems, localOrders, customerName, customerEmail, customerPhone, deliveryAddress]);
+  }, [
+    currentUser,
+    isAccountHydrated,
+    cartItems,
+    localOrders,
+    customerName,
+    customerEmail,
+    customerPhone,
+    deliveryAddress
+  ]);
 
   // Handle login/logout transitions cleanly:
   // - On browser refresh while logged in: prevAccountKey === nextAccountKey -> nothing wiped, session & data stay intact!
   // - On explicit logout: snapshot saved, active cart/orders/customer fields wiped clean!
-  // - On subsequent login: restore that account's saved cart, orders, and profile fields!
+  // - On subsequent login: restore that account's saved cart, orders, and profile fields before enabling auto-save!
   useEffect(() => {
     const prevKey = prevAccountKeyRef.current;
     const prevUser = prevUserRef.current;
     const nextKey = getAccountVaultKey(currentUser);
 
-    if (prevKey && prevKey !== nextKey) {
+    if (prevKey && prevKey !== nextKey && hydratedAccountKey === prevKey) {
       saveAccountSnapshot(prevUser, {
         cartItems: accountStateRef.current.cartItems,
         orders: accountStateRef.current.localOrders,
@@ -201,6 +263,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     if (!currentUser && prevKey) {
       // Logged out -> wipe active UI cart, orders, and checkout info cleanly
+      setHydratedAccountKey(null);
       setCartItems([]);
       setLocalOrders([]);
       setCustomerName('');
@@ -266,7 +329,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           currentUser.address || 'FreshBasket Central Distribution Hub, Tejgaon, Dhaka 1215'
         );
       }
-    } else if (currentUser) {
+      setHydratedAccountKey(nextKey);
+    } else if (currentUser && nextKey) {
+      setHydratedAccountKey(nextKey);
       setCustomerName((prev) => prev || currentUser.business_name || currentUser.full_name || '');
       setCustomerEmail((prev) => prev || currentUser.email || '');
       setCustomerPhone((prev) => currentUser.phone || prev);
@@ -275,7 +340,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     prevUserRef.current = currentUser;
     prevAccountKeyRef.current = nextKey;
-  }, [currentUser]);
+  }, [currentUser, hydratedAccountKey]);
 
   useEffect(() => {
     if (!drawerOpen) return;

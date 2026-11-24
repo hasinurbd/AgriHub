@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useState, useEffect, useMemo, useRef, ReactNode } from 'react';
 import {
   AgriHubApi,
   ApiError,
@@ -8,6 +8,7 @@ import {
   setApiBaseUrl
 } from '../api';
 import { INITIAL_USERS } from '../mockData';
+import { ensureOfflineDbSeeded, offlineDb } from '../lib/offlineDb';
 import {
   applySavedProfileToUser,
   readPersistedSession,
@@ -108,6 +109,23 @@ function saveExtraDemoUser(account: DemoAccount): void {
   }
 }
 
+function getEffectiveDemoAccounts(): DemoAccount[] {
+  const byEmail = new Map<string, DemoAccount>();
+  for (const acc of BUILTIN_DEMO_ACCOUNTS) {
+    byEmail.set(acc.email.toLowerCase(), acc);
+  }
+  for (const extra of readExtraDemoUsers()) {
+    if (extra?.email) {
+      byEmail.set(extra.email.toLowerCase(), extra);
+    }
+  }
+  return Array.from(byEmail.values());
+}
+
+function normalizeVerificationRef(value: string): string {
+  return String(value || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+}
+
 interface AuthContextType {
   currentUser: any | null;
   setCurrentUser: (user: any | null) => void;
@@ -121,6 +139,12 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<any | null>;
   loginDemoRole: (role: 'admin' | 'farmer' | 'supplier' | 'buyer') => any;
   register: (data: any) => Promise<boolean>;
+  resetPassword: (payload: {
+    email?: string;
+    verification_ref?: string;
+    current_password?: string;
+    new_password: string;
+  }) => Promise<{ success: boolean; message: string }>;
   updateCurrentUserProfile: (updates: {
     full_name: string;
     phone?: string;
@@ -136,14 +160,20 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<any | null>(() => readPersistedSession() || readDemoSession());
-  const [loadingUser, setLoadingUser] = useState<boolean>(true);
+  const [loadingUser, setLoadingUser] = useState<boolean>(() => hasConfiguredBackend());
   const [backendConnected, setBackendConnected] = useState<boolean | null>(null);
-  const [isDemoMode, setIsDemoMode] = useState<boolean>(false);
+  const [isDemoMode, setIsDemoMode] = useState<boolean>(() => !hasConfiguredBackend() && isDemoModeEnabled());
   const [backendMessage, setBackendMessage] = useState<string>('Checking session...');
   const [apiUrl, setApiUrlState] = useState<string>(getApiBaseUrl());
 
+  const sessionVersionRef = useRef<number>(0);
+
   const checkConnection = useCallback(async () => {
-    setLoadingUser(true);
+    const startVersion = sessionVersionRef.current;
+    const isInitialLoad = currentUser === null && backendConnected === null;
+    if (isInitialLoad && hasConfiguredBackend()) {
+      setLoadingUser(true);
+    }
     localStorage.removeItem('agrihub_user');
 
     if (!hasConfiguredBackend()) {
@@ -152,13 +182,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (isDemoModeEnabled()) {
         setIsDemoMode(true);
         setBackendMessage('Local mode active');
-        const restored = applySavedProfileToUser(savedSession);
-        setCurrentUser(restored);
-        if (restored) writePersistedSession(restored);
+        if (sessionVersionRef.current === startVersion) {
+          const restored = applySavedProfileToUser(savedSession);
+          setCurrentUser(restored);
+          if (restored) writePersistedSession(restored);
+        }
       } else {
         setIsDemoMode(false);
         setBackendMessage('Backend API URL is not configured.');
-        setCurrentUser(savedSession);
+        if (sessionVersionRef.current === startVersion) {
+          setCurrentUser(savedSession);
+        }
       }
       setLoadingUser(false);
       return;
@@ -166,6 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const meRes = await AgriHubApi.getMe();
+      if (sessionVersionRef.current !== startVersion) return;
       setBackendConnected(true);
       setIsDemoMode(false);
       setBackendMessage('Service online');
@@ -179,6 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setCurrentUser(null);
       }
     } catch (err: any) {
+      if (sessionVersionRef.current !== startVersion) return;
       if (err instanceof ApiError && err.isHttpError && err.status !== 503) {
         setBackendConnected(true);
         const activeLocalSession = isDemoModeEnabled() ? (readDemoSession() || readPersistedSession()) : null;
@@ -222,11 +258,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const authenticateDemoAccount = useCallback((email: string, password: string): any | null => {
     const normalized = email.trim().toLowerCase();
-    const allDemo = [...BUILTIN_DEMO_ACCOUNTS, ...readExtraDemoUsers()];
+    const allDemo = getEffectiveDemoAccounts();
     const match = allDemo.find(
       (acc) => acc.email.toLowerCase() === normalized && acc.passwords.includes(password)
     );
     if (!match) return null;
+
+    sessionVersionRef.current += 1;
+    try {
+      sessionStorage.removeItem('agrihub_admin_signed_out');
+    } catch {
+      // Ignore storage errors
+    }
 
     const userPayload = applySavedProfileToUser({
       id: match.id,
@@ -242,11 +285,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     writeDemoSession(userPayload);
     writePersistedSession(userPayload);
     setCurrentUser(userPayload);
+    setLoadingUser(false);
     setIsDemoMode(true);
     return userPayload;
   }, []);
 
   const loginDemoRole = useCallback((role: 'admin' | 'farmer' | 'supplier' | 'buyer') => {
+    sessionVersionRef.current += 1;
     try {
       sessionStorage.removeItem('agrihub_admin_signed_out');
     } catch {
@@ -267,17 +312,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     writeDemoSession(userPayload);
     writePersistedSession(userPayload);
     setCurrentUser(userPayload);
+    setLoadingUser(false);
     setIsDemoMode(true);
     return userPayload;
   }, []);
 
   const login = useCallback(async (email: string, password: string): Promise<any | null> => {
+    sessionVersionRef.current += 1;
     try {
       sessionStorage.removeItem('agrihub_admin_signed_out');
     } catch {
       // Ignore storage errors
     }
-    setLoadingUser(true);
     try {
       if (hasConfiguredBackend()) {
         const res = await AgriHubApi.login(email, password);
@@ -289,6 +335,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const mergedUser = applySavedProfileToUser(res.data);
           writePersistedSession(mergedUser);
           setCurrentUser(mergedUser);
+          setLoadingUser(false);
           return mergedUser;
         }
         writePersistedSession(null);
@@ -314,6 +361,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         (err.status === 401 || err.status === 403 || err.status === 422);
 
       if (isAuthRejection) {
+        // If MySQL only seeded admin@agrihub.local and user signed in with local admin@agrihub.com credentials,
+        // allow local admin mode instead of locking out the frontend Admin Panel.
+        if (isDemoModeEnabled() && email.trim().toLowerCase() === 'admin@agrihub.com') {
+          const localAdmin = authenticateDemoAccount(email, password);
+          if (localAdmin) {
+            setBackendConnected(true);
+            setBackendMessage('Local admin active (sign in via Sync Bar for MySQL sync)');
+            return localAdmin;
+          }
+        }
         // Real backend rejected credentials -> propagate error without bypassing
         setBackendConnected(true);
         setIsDemoMode(false);
@@ -322,7 +379,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw err;
       }
 
-      // Network / 404 / 5xx / Backend temporarily unreachable -> allow Offline-First fallback if enabled
+      // Network / 404 / 5xx / Backend temporarily unreachable -> allow Local-First fallback if enabled
       setBackendConnected(false);
       if (isDemoModeEnabled()) {
         setIsDemoMode(true);
@@ -415,6 +472,142 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoadingUser(false);
     }
   }, []);
+
+  const resetPassword = useCallback(
+    async (payload: {
+      email?: string;
+      verification_ref?: string;
+      current_password?: string;
+      new_password: string;
+    }): Promise<{ success: boolean; message: string }> => {
+      if (hasConfiguredBackend()) {
+        try {
+          const res = await AgriHubApi.resetPassword(payload);
+          if (res.success) {
+            return {
+              success: true,
+              message: res.message || 'Password updated successfully.'
+            };
+          }
+          return {
+            success: false,
+            message: res.message || 'Password reset failed.'
+          };
+        } catch (err: any) {
+          if (err instanceof ApiError && err.isHttpError && err.status !== 503 && err.status !== 404) {
+            throw err;
+          }
+          if (!isDemoModeEnabled()) {
+            throw err;
+          }
+        }
+      }
+
+      if (!isDemoModeEnabled()) {
+        return {
+          success: false,
+          message: 'Password reset service is currently unavailable.'
+        };
+      }
+
+      await ensureOfflineDbSeeded();
+      const offlineUsers = await offlineDb.users.toArray();
+      const allAccounts = getEffectiveDemoAccounts();
+
+      if (currentUser && payload.current_password !== undefined) {
+        const activeEmail = String(currentUser.email || '').trim().toLowerCase();
+        const existingAccount = allAccounts.find(
+          (acc) => acc.email.toLowerCase() === activeEmail
+        );
+        if (existingAccount && !existingAccount.passwords.includes(payload.current_password)) {
+          return {
+            success: false,
+            message: 'Current password is incorrect.'
+          };
+        }
+        const updatedAccount: DemoAccount = existingAccount
+          ? { ...existingAccount, passwords: [payload.new_password] }
+          : {
+              id: Number(currentUser.id || 1),
+              role: (currentUser.role || 'buyer') as DemoAccount['role'],
+              full_name: currentUser.full_name || 'AgriHub Member',
+              email: activeEmail || 'member@agrihub.local',
+              phone: currentUser.phone || '+880 1700-000000',
+              business_name: currentUser.business_name || 'AgriHub Partner',
+              address: currentUser.address || 'Dhaka Trade Corridor',
+              is_verified: Boolean(currentUser.is_verified ?? true),
+              passwords: [payload.new_password]
+            };
+        saveExtraDemoUser(updatedAccount);
+        return {
+          success: true,
+          message: 'Password updated successfully. Your new password is active.'
+        };
+      }
+
+      const normalizedEmail = String(payload.email || '').trim().toLowerCase();
+      const normalizedRef = normalizeVerificationRef(payload.verification_ref || '');
+      if (!normalizedEmail || !normalizedRef) {
+        return {
+          success: false,
+          message: 'Email and phone number or Trade License / NID are required.'
+        };
+      }
+
+      const demoMatch = allAccounts.find((acc) => acc.email.toLowerCase() === normalizedEmail);
+      const offlineMatch = offlineUsers.find(
+        (u) => String(u.email || '').trim().toLowerCase() === normalizedEmail
+      );
+
+      const candidate = demoMatch || (offlineMatch
+        ? {
+            id: Number(offlineMatch.id),
+            role: offlineMatch.role as DemoAccount['role'],
+            full_name: offlineMatch.full_name,
+            email: offlineMatch.email,
+            phone: offlineMatch.phone,
+            business_name: offlineMatch.business_name,
+            address: offlineMatch.address,
+            is_verified: Boolean(offlineMatch.is_verified),
+            passwords: ['Password123!']
+          }
+        : null);
+
+      if (!candidate) {
+        return {
+          success: false,
+          message: 'No registered account found for that email address.'
+        };
+      }
+
+      const refMatches = [
+        candidate.phone,
+        candidate.business_name,
+        offlineMatch?.phone,
+        offlineMatch?.tax_or_nid_no
+      ]
+        .map((v) => normalizeVerificationRef(v || ''))
+        .filter(Boolean);
+
+      if (!refMatches.some((ref) => ref === normalizedRef || ref.endsWith(normalizedRef) || normalizedRef.endsWith(ref))) {
+        return {
+          success: false,
+          message: 'Verification phone number or Trade License / NID does not match our records.'
+        };
+      }
+
+      saveExtraDemoUser({
+        ...candidate,
+        passwords: [payload.new_password]
+      });
+
+      return {
+        success: true,
+        message: 'Password updated successfully. You can now sign in with your new password.'
+      };
+    },
+    [currentUser]
+  );
 
   const updateCurrentUserProfile = useCallback(
     async (updates: {
@@ -517,6 +710,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       loginDemoRole,
       register,
+      resetPassword,
       updateCurrentUserProfile,
       logout,
       isAdmin
@@ -533,6 +727,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       loginDemoRole,
       register,
+      resetPassword,
       updateCurrentUserProfile,
       logout,
       isAdmin

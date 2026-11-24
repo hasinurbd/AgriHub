@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { KeyRound, Mail, ShieldCheck, Lock, AlertTriangle, CheckCircle2, ArrowLeft, Eye, EyeOff } from 'lucide-react';
-import { AgriHubApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
 export default function ForgotPasswordPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, resetPassword } = useAuth();
   const { tr } = useLanguage();
 
   const [email, setEmail] = useState(currentUser?.email || '');
@@ -41,7 +40,7 @@ export default function ForgotPasswordPage() {
         ? { current_password: currentPassword, new_password: newPassword }
         : { email: email.trim(), verification_ref: verificationRef.trim(), new_password: newPassword };
 
-      const res = await AgriHubApi.resetPassword(payload);
+      const res = await resetPassword(payload);
       if (res.success) {
         setSuccessMsg(
           res.message ||

@@ -41,13 +41,15 @@ function RouteLoader() {
   );
 }
 
-// Protected Admin Route wrapper enforcing role === 'admin', with zero-password auto-entry when no DB backend is configured
+// Protected Admin Route wrapper enforcing role === 'admin', with zero-password auto-entry when no live DB backend is connected
 function ProtectedAdminRoute() {
-  const { currentUser, isAdmin, loadingUser, loginDemoRole } = useAuth();
+  const { currentUser, isAdmin, loadingUser, backendConnected, loginDemoRole } = useAuth();
   const { tr } = useLanguage();
 
+  const noLiveBackend = !hasConfiguredBackend() || backendConnected === false;
+
   const canAutoEnterLocalAdmin = (() => {
-    if (hasConfiguredBackend() || !isDemoModeEnabled()) return false;
+    if (!noLiveBackend || !isDemoModeEnabled()) return false;
     try {
       return sessionStorage.getItem('agrihub_admin_signed_out') !== '1';
     } catch {
@@ -61,7 +63,7 @@ function ProtectedAdminRoute() {
     }
   }, [loadingUser, currentUser, canAutoEnterLocalAdmin, loginDemoRole]);
 
-  if (loadingUser || (!currentUser && canAutoEnterLocalAdmin)) {
+  if (!currentUser && (loadingUser || canAutoEnterLocalAdmin)) {
     return (
       <div className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
         <div className="agri-card bg-white p-6 flex items-center gap-3 text-xs font-semibold text-slate-700">
@@ -77,7 +79,7 @@ function ProtectedAdminRoute() {
   }
 
   if (!isAdmin) {
-    const canInstantSwitch = !hasConfiguredBackend() && isDemoModeEnabled();
+    const canInstantSwitch = isDemoModeEnabled();
     return (
       <div className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
         <div className="agri-card bg-white rounded-3xl max-w-md w-full p-8 shadow-xl text-center space-y-4">

@@ -11,7 +11,7 @@ import {
   EyeOff,
   LayoutDashboard
 } from 'lucide-react';
-import { hasConfiguredBackend, isDemoModeEnabled } from '../../api';
+import { isDemoModeEnabled } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -33,13 +33,18 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const canDirectOpen = (!hasConfiguredBackend() || !backendConnected) && isDemoModeEnabled();
+  const canDirectOpen = isDemoModeEnabled();
 
   if (currentUser && isAdmin) {
     return <Navigate to={targetRedirect} replace />;
   }
 
   const handleInstantAdminEntry = () => {
+    try {
+      sessionStorage.removeItem('agrihub_admin_signed_out');
+    } catch {
+      // Ignore storage errors
+    }
     loginDemoRole('admin');
     navigate(targetRedirect, { replace: true });
   };
@@ -68,16 +73,6 @@ export default function AdminLoginPage() {
       setError(err?.message || tr('Unable to sign in.', 'সাইন ইন করা যায়নি।'));
     } finally {
       setLoading(false);
-    }
-  };
-
-  const setPreset = () => {
-    if (backendConnected) {
-      setEmail('admin@agrihub.local');
-      setPassword('Password123!');
-    } else {
-      setEmail('admin@agrihub.com');
-      setPassword('agraiagrihb#1');
     }
   };
 
@@ -241,15 +236,26 @@ export default function AdminLoginPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <button
               type="button"
-              onClick={setPreset}
+              onClick={() => {
+                setEmail('admin@agrihub.com');
+                setPassword('agraiagrihb#1');
+              }}
               className="text-[11px] font-semibold text-[#047857] hover:underline"
             >
-              {backendConnected
-                ? tr('Load Admin Credentials (admin@agrihub.local)', 'অ্যাডমিন তথ্য পূরণ করুন (admin@agrihub.local)')
-                : tr('Load Admin Credentials (admin@agrihub.com)', 'অ্যাডমিন তথ্য পূরণ করুন (admin@agrihub.com)')}
+              {tr('Load Local Admin (admin@agrihub.com)', 'লোকাল অ্যাডমিন (admin@agrihub.com)')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('admin@agrihub.local');
+                setPassword('Password123!');
+              }}
+              className="text-[11px] font-semibold text-slate-600 hover:text-[#047857] hover:underline"
+            >
+              {tr('Load MySQL Admin (admin@agrihub.local)', 'MySQL অ্যাডমিন (admin@agrihub.local)')}
             </button>
           </div>
 
